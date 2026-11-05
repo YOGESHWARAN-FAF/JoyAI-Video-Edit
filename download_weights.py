@@ -130,3 +130,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     download_core_weights(download_qwen=args.qwen)
+

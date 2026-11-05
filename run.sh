@@ -5,7 +5,7 @@
 
 export PYTHONNOUSERSITE=1
 
-PORT=${PORT:-8080}
+PORT=${PORT:-8090}
 HOST=${HOST:-"0.0.0.0"}
 GPU_ID=${GPU_ID:-0}
 WIDTH=${WIDTH:-840}
@@ -13,6 +13,7 @@ HEIGHT=${HEIGHT:-480}
 FPS=${FPS:-24}
 FORCE_NO_PE=""
 FORCE_QWEN=""
+ENABLE_TUNNEL=1
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -55,11 +56,19 @@ while [[ $# -gt 0 ]]; do
             FPS=16
             shift
             ;;
+        --no-tunnel)
+            ENABLE_TUNNEL=0
+            shift
+            ;;
+        --tunnel)
+            ENABLE_TUNNEL=1
+            shift
+            ;;
         --help|-h)
             echo "Usage: bash run.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --port <PORT>      Server port (default: 8080)"
+            echo "  --port <PORT>      Server port (default: 8090)"
             echo "  --host <HOST>      Host binding address (default: 0.0.0.0)"
             echo "  --gpu <ID>         CUDA GPU device index (default: 0)"
             echo "  --width <W>        Video width (default: 840)"
@@ -68,6 +77,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --720p             Preset for 720p (1248x720 @ 16 FPS)"
             echo "  --qwen             Use local Qwen3.5-35B PE checkpoint"
             echo "  --no-pe            Run in raw direct prompt mode (no PE)"
+            echo "  --tunnel           Enable public Cloudflare URL (default: enabled)"
+            echo "  --no-tunnel        Disable public Cloudflare URL"
             exit 0
             ;;
         *)
@@ -155,12 +166,52 @@ echo "          Launching JoyAI-Video-Edit Server               "
 echo "=========================================================="
 echo "[+] Python:        $JOY_PYTHON"
 echo "[+] Device:        GPU $GPU_ID (CUDA_VISIBLE_DEVICES=$GPU_ID)"
+echo "[+] Port:          $PORT"
 echo "[+] Resolution:    ${WIDTH}x${HEIGHT} @ ${FPS} FPS"
 echo "[+] FP8 Engine:    $FP8_STATUS"
 echo "[+] PE Engine:     $PE_STATUS"
 echo "[+] Low VRAM Mode: $JOYOMNI_LOW_VRAM"
 echo "[+] Local URL:     http://localhost:$PORT"
 echo "[+] Network URL:   http://$HOST:$PORT"
+
+# Start Cloudflare Public Tunnel for instant browser access
+if [ "$ENABLE_TUNNEL" = "1" ]; then
+    CLOUDFLARED_BIN="$REPO_ROOT/deploy/tmp/cloudflared"
+    if [ ! -f "$CLOUDFLARED_BIN" ]; then
+        echo "[+] Downloading cloudflared for instant HTTPS public URL..."
+        mkdir -p "$REPO_ROOT/deploy/tmp"
+        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O "$CLOUDFLARED_BIN" 2>/dev/null || true
+        chmod +x "$CLOUDFLARED_BIN" 2>/dev/null || true
+    fi
+
+    if [ -x "$CLOUDFLARED_BIN" ]; then
+        CLOUDFLARE_LOG="$REPO_ROOT/deploy/tmp/cloudflared.log"
+        rm -f "$CLOUDFLARE_LOG"
+        "$CLOUDFLARED_BIN" tunnel --url "http://127.0.0.1:$PORT" > "$CLOUDFLARE_LOG" 2>&1 &
+        CF_PID=$!
+        trap "kill $CF_PID 2>/dev/null || true" EXIT
+
+        # Background listener to display public URL as soon as generated
+        (
+            for i in {1..20}; do
+                sleep 1
+                if [ -f "$CLOUDFLARE_LOG" ]; then
+                    PUBLIC_URL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' "$CLOUDFLARE_LOG" | head -n 1)
+                    if [ -n "$PUBLIC_URL" ]; then
+                        echo ""
+                        echo "=========================================================="
+                        echo "  🌐 PUBLIC BROWSER URL (HTTPS + WSS):"
+                        echo "  👉 $PUBLIC_URL"
+                        echo "=========================================================="
+                        echo ""
+                        break
+                    fi
+                fi
+            done
+        ) &
+    fi
+fi
+
 echo "=========================================================="
 
 EXTRA_ARGS=""

@@ -161,5 +161,6 @@ echo "To start the streaming video edit server, run:"
 echo "    bash run.sh"
 echo ""
 echo "Or with custom options:"
-echo "    bash run.sh --port 8080 --gpu 0"
+echo "    bash run.sh --port 8090 --gpu 0"
 echo "=========================================================="
+
