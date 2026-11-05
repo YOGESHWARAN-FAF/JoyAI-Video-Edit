@@ -16,6 +16,8 @@ FORCE_NO_PE=""
 FORCE_QWEN=""
 ENABLE_TUNNEL=1
 ENABLE_PINGGY=0
+ENABLE_NGROK=0
+NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN:-}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -58,6 +60,20 @@ while [[ $# -gt 0 ]]; do
             FPS=16
             shift
             ;;
+        --ngrok)
+            ENABLE_NGROK=1
+            if [[ -n "${2:-}" && ! "$2" =~ ^-- ]]; then
+                NGROK_AUTHTOKEN="$2"
+                shift 2
+            else
+                shift 1
+            fi
+            ;;
+        --ngrok-token)
+            NGROK_AUTHTOKEN="$2"
+            ENABLE_NGROK=1
+            shift 2
+            ;;
         --no-cloudflare|--no-tunnel)
             ENABLE_TUNNEL=0
             shift
@@ -83,6 +99,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --720p             Preset for 720p (1248x720 @ 16 FPS)"
             echo "  --qwen             Use local Qwen3.5-35B PE checkpoint"
             echo "  --no-pe            Run in raw direct prompt mode (no PE)"
+            echo "  --ngrok [TOKEN]    Start public ngrok HTTPS tunnel (high-speed live stream)"
             echo "  --cloudflare       Enable Cloudflare HTTPS tunnel (default: enabled)"
             echo "  --no-cloudflare    Disable Cloudflare HTTPS tunnel"
             echo "  --pinggy           Start public Pinggy tunnel"
@@ -198,8 +215,13 @@ echo "     ssh -L $PORT:localhost:$PORT administrator@$SERVER_IP"
 echo "     Then open in your browser:"
 echo "     👉 http://localhost:$PORT/"
 echo ""
-echo "  3. Cloudflare Public HTTPS URL:"
-echo "     👉 Automatic HTTPS tunnel starting inside application..."
+if [ "$ENABLE_NGROK" = "1" ]; then
+    echo "  3. ngrok Public HTTPS URL:"
+    echo "     👉 ngrok live stream tunnel starting inside application..."
+else
+    echo "  3. Cloudflare Public HTTPS URL:"
+    echo "     👉 Automatic HTTPS tunnel starting inside application..."
+fi
 echo "=========================================================="
 
 # Optional Pinggy tunnel
@@ -215,7 +237,12 @@ if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
     EXTRA_ARGS="--no-use-pe"
 fi
 
-if [ "$ENABLE_TUNNEL" = "1" ]; then
+if [ "$ENABLE_NGROK" = "1" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --ngrok"
+    if [ -n "$NGROK_AUTHTOKEN" ]; then
+        EXTRA_ARGS="$EXTRA_ARGS --ngrok-authtoken $NGROK_AUTHTOKEN"
+    fi
+elif [ "$ENABLE_TUNNEL" = "1" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --cloudflare"
 else
     EXTRA_ARGS="$EXTRA_ARGS --no-cloudflare"

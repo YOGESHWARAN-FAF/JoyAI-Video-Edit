@@ -255,6 +255,136 @@ class CloudflareTunnel:
             self.process = None
 
 
+def _ensure_ngrok() -> str | None:
+    # 1. System PATH
+    found = shutil.which("ngrok")
+    if found:
+        return found
+    # 2. Local deploy/tmp/ngrok
+    bin_name = "ngrok.exe" if platform.system() == "Windows" else "ngrok"
+    bin_path = Path(__file__).resolve().parents[2] / "tmp" / bin_name
+    if bin_path.exists() and (platform.system() == "Windows" or os.access(bin_path, os.X_OK)):
+        return str(bin_path)
+    # 3. Auto-download for Linux or Windows
+    bin_path.parent.mkdir(parents=True, exist_ok=True)
+    if platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"):
+        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+        try:
+            print("[+] Downloading official ngrok CLI for live streaming...", flush=True)
+            import tarfile
+            tgz_path = bin_path.parent / "ngrok.tgz"
+            urllib.request.urlretrieve(url, str(tgz_path))
+            with tarfile.open(str(tgz_path), "r:gz") as tar:
+                tar.extractall(path=str(bin_path.parent))
+            if tgz_path.exists():
+                tgz_path.unlink()
+            if bin_path.exists():
+                bin_path.chmod(0o755)
+                return str(bin_path)
+        except Exception as e:
+            print(f"[!] Warning: Unable to download ngrok: {e}", flush=True)
+            return None
+    elif platform.system() == "Windows":
+        url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+        try:
+            print("[+] Downloading official ngrok for Windows...", flush=True)
+            import zipfile
+            zip_path = bin_path.parent / "ngrok.zip"
+            urllib.request.urlretrieve(url, str(zip_path))
+            with zipfile.ZipFile(str(zip_path), "r") as zf:
+                zf.extractall(path=str(bin_path.parent))
+            if zip_path.exists():
+                zip_path.unlink()
+            if bin_path.exists():
+                return str(bin_path)
+        except Exception as e:
+            print(f"[!] Warning: Unable to download ngrok: {e}", flush=True)
+            return None
+    return None
+
+
+class NgrokTunnel:
+    def __init__(self, port: int, authtoken: str | None = None) -> None:
+        self.port = port
+        self.authtoken = authtoken or os.environ.get("NGROK_AUTHTOKEN")
+        self.process: subprocess.Popen | None = None
+        self.public_url: str | None = None
+        self._stop_event = threading.Event()
+
+    def start(self) -> None:
+        bin_path = _ensure_ngrok()
+        if not bin_path:
+            print("[!] ngrok binary not available; skipping ngrok tunnel.", flush=True)
+            return
+
+        if self.authtoken:
+            try:
+                subprocess.run([bin_path, "config", "add-authtoken", self.authtoken], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+        cmd = [
+            bin_path,
+            "http",
+            str(self.port),
+            "--log=stdout",
+            "--log-format=logfmt",
+        ]
+
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as exc:
+            print(f"[!] Failed to launch ngrok: {exc}", flush=True)
+            return
+
+        threading.Thread(target=self._monitor, daemon=True, name="ngrok-tunnel-monitor").start()
+
+    def _monitor(self) -> None:
+        if not self.process or not self.process.stdout:
+            return
+        pattern = re.compile(r"url=(https://[-a-zA-Z0-9.]+\.ngrok(?:-free)?\.(?:app|io))")
+        err_pattern = re.compile(r"(ERR_NGROK_\d+:[^\n]+)")
+        for line in self.process.stdout:
+            if self._stop_event.is_set():
+                break
+            match = pattern.search(line)
+            if match and not self.public_url:
+                self.public_url = match.group(1)
+                print("\n" + "=" * 62, flush=True)
+                print("  🎉 NGROK PUBLIC HTTPS URL IS READY!", flush=True)
+                print("  🌐 OPEN THIS EXACT LINK IN YOUR HOME BROWSER:", flush=True)
+                print(f"  👉 {self.public_url}", flush=True)
+                print("  (Webcam, real-time live streaming, and controls active)", flush=True)
+                print("=" * 62 + "\n", flush=True)
+
+            err_match = err_pattern.search(line)
+            if err_match and not self.public_url:
+                print("\n" + "!" * 62, flush=True)
+                print(f"  [!] ngrok Notice: {err_match.group(1)}", flush=True)
+                print("  To use ngrok, get your free token at: https://dashboard.ngrok.com/get-started/your-authtoken", flush=True)
+                print("  Then run: bash run.sh --ngrok YOUR_AUTHTOKEN", flush=True)
+                print("!" * 62 + "\n", flush=True)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
+
+
 class _H264Stream:
     def __init__(self, quality: int) -> None:
         self._lock = threading.Lock()
@@ -862,12 +992,18 @@ def create_app(args: argparse.Namespace) -> FastAPI:
         if args.preload:
             threading.Thread(target=get_runtime, daemon=True, name="joyomni-preload").start()
         cf = None
-        if getattr(args, "cloudflare", True):
+        ng = None
+        if getattr(args, "ngrok", False):
+            ng = NgrokTunnel(args.port, authtoken=getattr(args, "ngrok_authtoken", None))
+            ng.start()
+        elif getattr(args, "cloudflare", True):
             cf = CloudflareTunnel(args.port)
             cf.start()
         yield
         if cf:
             cf.stop()
+        if ng:
+            ng.stop()
 
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(
@@ -2292,6 +2428,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--cloudflare", action=argparse.BooleanOptionalAction, default=True,
                         help="Launch Cloudflare trycloudflare tunnel inside the application for instant HTTPS browser access.")
+    parser.add_argument("--ngrok", action=argparse.BooleanOptionalAction, default=False,
+                        help="Launch ngrok HTTPS tunnel for high-speed live streaming public access.")
+    parser.add_argument("--ngrok-authtoken", type=str, default=None,
+                        help="ngrok account authtoken (or set NGROK_AUTHTOKEN env var).")
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--vae-device", type=str, default=None)
     parser.add_argument("--vae-encode-device", type=str, default=None)
