@@ -14,7 +14,7 @@ HEIGHT=${HEIGHT:-480}
 FPS=${FPS:-24}
 FORCE_NO_PE=""
 FORCE_QWEN=""
-ENABLE_TUNNEL=0
+ENABLE_TUNNEL=1
 ENABLE_PINGGY=0
 
 # Parse arguments
@@ -58,7 +58,11 @@ while [[ $# -gt 0 ]]; do
             FPS=16
             shift
             ;;
-        --cloudflare)
+        --no-cloudflare|--no-tunnel)
+            ENABLE_TUNNEL=0
+            shift
+            ;;
+        --cloudflare|--tunnel)
             ENABLE_TUNNEL=1
             shift
             ;;
@@ -79,8 +83,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --720p             Preset for 720p (1248x720 @ 16 FPS)"
             echo "  --qwen             Use local Qwen3.5-35B PE checkpoint"
             echo "  --no-pe            Run in raw direct prompt mode (no PE)"
-            echo "  --pinggy           Start public Pinggy tunnel (works on all ISPs)"
-            echo "  --cloudflare       Start Cloudflare trycloudflare tunnel"
+            echo "  --cloudflare       Enable Cloudflare HTTPS tunnel (default: enabled)"
+            echo "  --no-cloudflare    Disable Cloudflare HTTPS tunnel"
+            echo "  --pinggy           Start public Pinggy tunnel"
             exit 0
             ;;
         *)
@@ -193,8 +198,8 @@ echo "     ssh -L $PORT:localhost:$PORT administrator@$SERVER_IP"
 echo "     Then open in your browser:"
 echo "     👉 http://localhost:$PORT/"
 echo ""
-echo "  3. Local Server URL:"
-echo "     👉 http://localhost:$PORT/"
+echo "  3. Cloudflare Public HTTPS URL:"
+echo "     👉 Automatic HTTPS tunnel starting inside application..."
 echo "=========================================================="
 
 # Optional Pinggy tunnel
@@ -205,21 +210,15 @@ if [ "$ENABLE_PINGGY" = "1" ]; then
     trap "kill $PINGGY_PID 2>/dev/null || true" EXIT
 fi
 
-# Optional Cloudflare tunnel
-if [ "$ENABLE_TUNNEL" = "1" ]; then
-    CLOUDFLARED_BIN="$REPO_ROOT/deploy/tmp/cloudflared"
-    if [ -x "$CLOUDFLARED_BIN" ]; then
-        CLOUDFLARE_LOG="$REPO_ROOT/deploy/tmp/cloudflared.log"
-        rm -f "$CLOUDFLARE_LOG"
-        "$CLOUDFLARED_BIN" tunnel --http-host-header "localhost" --url "http://127.0.0.1:$PORT" > "$CLOUDFLARE_LOG" 2>&1 &
-        CF_PID=$!
-        trap "kill $CF_PID 2>/dev/null || true" EXIT
-    fi
-fi
-
 EXTRA_ARGS=""
 if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
     EXTRA_ARGS="--no-use-pe"
+fi
+
+if [ "$ENABLE_TUNNEL" = "1" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --cloudflare"
+else
+    EXTRA_ARGS="$EXTRA_ARGS --no-cloudflare"
 fi
 
 bash "$REPO_ROOT/deploy/run_server.sh" $EXTRA_ARGS

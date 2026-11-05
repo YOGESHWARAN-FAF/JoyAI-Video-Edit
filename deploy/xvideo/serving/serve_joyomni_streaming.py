@@ -7,12 +7,16 @@ import io
 import json
 import math
 import os
+import platform
 import queue
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
 import time
+import urllib.request
 import uuid
 from contextlib import asynccontextmanager
 from fractions import Fraction
@@ -24,6 +28,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from PIL import Image
 import uvicorn
@@ -127,6 +132,127 @@ def _decode_ref_image(value: str | None) -> Image.Image | None:
 
 def _snap_to_align(value: int, align: int) -> int:
     return max(align, (value + align // 2) // align * align)
+
+
+def _ensure_cloudflared() -> str | None:
+    # 1. System PATH
+    found = shutil.which("cloudflared")
+    if found:
+        return found
+    # 2. Local deploy/tmp/cloudflared
+    bin_name = "cloudflared.exe" if platform.system() == "Windows" else "cloudflared"
+    bin_path = Path(__file__).resolve().parents[2] / "tmp" / bin_name
+    if bin_path.exists() and (platform.system() == "Windows" or os.access(bin_path, os.X_OK)):
+        return str(bin_path)
+    # 3. Auto-download for Linux or Windows
+    bin_path.parent.mkdir(parents=True, exist_ok=True)
+    if platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"):
+        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+    elif platform.system() == "Windows":
+        url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+    else:
+        return None
+
+    try:
+        print("[+] Downloading cloudflared for public HTTPS browser access...", flush=True)
+        urllib.request.urlretrieve(url, str(bin_path))
+        if platform.system() != "Windows":
+            bin_path.chmod(0o755)
+        return str(bin_path)
+    except Exception as e:
+        print(f"[!] Warning: Unable to download cloudflared: {e}", flush=True)
+        return None
+
+
+class CloudflareTunnel:
+    def __init__(self, port: int) -> None:
+        self.port = port
+        self.process: subprocess.Popen | None = None
+        self.public_url: str | None = None
+        self._stop_event = threading.Event()
+
+    def start(self) -> None:
+        bin_path = _ensure_cloudflared()
+        if not bin_path:
+            print("[!] cloudflared binary not available; skipping Cloudflare tunnel.", flush=True)
+            return
+
+        cmd = [
+            bin_path,
+            "tunnel",
+            "--protocol", "http2",
+            "--url", f"http://127.0.0.1:{self.port}",
+        ]
+
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as exc:
+            print(f"[!] Failed to launch cloudflared: {exc}", flush=True)
+            return
+
+        threading.Thread(target=self._monitor, daemon=True, name="cf-tunnel-monitor").start()
+
+    def _monitor(self) -> None:
+        if not self.process or not self.process.stderr:
+            return
+        pattern = re.compile(r"https://[-a-zA-Z0-9.]+\.trycloudflare\.com")
+        for line in self.process.stderr:
+            if self._stop_event.is_set():
+                break
+            match = pattern.search(line)
+            if match and not self.public_url:
+                self.public_url = match.group(0)
+                print("\n" + "=" * 62, flush=True)
+                print("  🌐 CLOUDFLARE PUBLIC URL CREATED:", flush=True)
+                print(f"  👉 {self.public_url}", flush=True)
+                print("  ⏳ Registering with Cloudflare Edge (verifying in background)...", flush=True)
+                print("=" * 62 + "\n", flush=True)
+                threading.Thread(target=self._verify_edge, args=(self.public_url,), daemon=True, name="cf-tunnel-verify").start()
+
+    def _verify_edge(self, url: str) -> None:
+        time.sleep(4)
+        for _ in range(12):
+            if self._stop_event.is_set():
+                return
+            try:
+                req = urllib.request.Request(
+                    f"{url}/health",
+                    headers={"User-Agent": "JoyAI-Tunnel-Verifier/1.0"},
+                )
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    if resp.status == 200:
+                        print("\n" + "=" * 62, flush=True)
+                        print("  🎉 CLOUDFLARE TUNNEL IS FULLY ONLINE & READY!", flush=True)
+                        print("  🌐 OPEN THIS EXACT LINK IN YOUR HOME BROWSER:", flush=True)
+                        print(f"  👉 {url}", flush=True)
+                        print("  (Webcam, video stream, and controls fully supported)", flush=True)
+                        print("=" * 62 + "\n", flush=True)
+                        return
+            except Exception:
+                time.sleep(2)
+        print("\n" + "=" * 62, flush=True)
+        print("  🌐 CLOUDFLARE URL IS ACTIVE:", flush=True)
+        print(f"  👉 {url}", flush=True)
+        print("=" * 62 + "\n", flush=True)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
 
 
 class _H264Stream:
@@ -735,9 +861,22 @@ def create_app(args: argparse.Namespace) -> FastAPI:
     async def lifespan(_app: FastAPI):
         if args.preload:
             threading.Thread(target=get_runtime, daemon=True, name="joyomni-preload").start()
+        cf = None
+        if getattr(args, "cloudflare", True):
+            cf = CloudflareTunnel(args.port)
+            cf.start()
         yield
+        if cf:
+            cf.stop()
 
     app = FastAPI(lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.runtime = None
     app.state.runtime_lock = threading.Lock()
     app.state.inference_lock = threading.Lock()
@@ -2151,6 +2290,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--text-encoder-ckpt", type=str, default=None, help="Override text-encoder checkpoint dir (else uses the config default).")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--cloudflare", action=argparse.BooleanOptionalAction, default=True,
+                        help="Launch Cloudflare trycloudflare tunnel inside the application for instant HTTPS browser access.")
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--vae-device", type=str, default=None)
     parser.add_argument("--vae-encode-device", type=str, default=None)
