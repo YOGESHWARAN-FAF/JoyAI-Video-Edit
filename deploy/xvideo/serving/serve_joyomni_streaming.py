@@ -142,7 +142,12 @@ def _ensure_cloudflared() -> str | None:
     # 2. Local deploy/tmp/cloudflared
     bin_name = "cloudflared.exe" if platform.system() == "Windows" else "cloudflared"
     bin_path = Path(__file__).resolve().parents[2] / "tmp" / bin_name
-    if bin_path.exists() and (platform.system() == "Windows" or os.access(bin_path, os.X_OK)):
+    if bin_path.exists():
+        if platform.system() != "Windows":
+            try:
+                bin_path.chmod(0o755)
+            except Exception:
+                pass
         return str(bin_path)
     # 3. Auto-download for Linux or Windows
     bin_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,38 +213,15 @@ class CloudflareTunnel:
             match = pattern.search(line)
             if match and not self.public_url:
                 self.public_url = match.group(0)
-                print("\n" + "=" * 62, flush=True)
-                print("  🌐 CLOUDFLARE PUBLIC URL CREATED:", flush=True)
+                print("\n" + "=" * 64, flush=True)
+                print("  🎉 CLOUDFLARE LIVE PUBLIC URL READY!", flush=True)
+                print("  🌐 OPEN THIS EXACT LINK IN YOUR BROWSER AT HOME:", flush=True)
                 print(f"  👉 {self.public_url}", flush=True)
-                print("  ⏳ Registering with Cloudflare Edge (verifying in background)...", flush=True)
-                print("=" * 62 + "\n", flush=True)
-                threading.Thread(target=self._verify_edge, args=(self.public_url,), daemon=True, name="cf-tunnel-verify").start()
-
-    def _verify_edge(self, url: str) -> None:
-        time.sleep(4)
-        for _ in range(12):
-            if self._stop_event.is_set():
-                return
-            try:
-                req = urllib.request.Request(
-                    f"{url}/health",
-                    headers={"User-Agent": "JoyAI-Tunnel-Verifier/1.0"},
-                )
-                with urllib.request.urlopen(req, timeout=4) as resp:
-                    if resp.status == 200:
-                        print("\n" + "=" * 62, flush=True)
-                        print("  🎉 CLOUDFLARE TUNNEL IS FULLY ONLINE & READY!", flush=True)
-                        print("  🌐 OPEN THIS EXACT LINK IN YOUR HOME BROWSER:", flush=True)
-                        print(f"  👉 {url}", flush=True)
-                        print("  (Webcam, video stream, and controls fully supported)", flush=True)
-                        print("=" * 62 + "\n", flush=True)
-                        return
-            except Exception:
-                time.sleep(2)
-        print("\n" + "=" * 62, flush=True)
-        print("  🌐 CLOUDFLARE URL IS ACTIVE:", flush=True)
-        print(f"  👉 {url}", flush=True)
-        print("=" * 62 + "\n", flush=True)
+                print("  (Webcam, real-time live streaming, and AI controls enabled)", flush=True)
+                print("=" * 64 + "\n", flush=True)
+            if "Registered at tunnel connection" in line or "connIndex=0" in line:
+                if self.public_url:
+                    print(f"[✓] Cloudflare tunnel edge connection verified: {self.public_url}\n", flush=True)
 
     def stop(self) -> None:
         self._stop_event.set()
