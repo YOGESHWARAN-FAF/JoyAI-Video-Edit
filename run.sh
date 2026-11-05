@@ -187,26 +187,40 @@ if [ "$ENABLE_TUNNEL" = "1" ]; then
     if [ -x "$CLOUDFLARED_BIN" ]; then
         CLOUDFLARE_LOG="$REPO_ROOT/deploy/tmp/cloudflared.log"
         rm -f "$CLOUDFLARE_LOG"
-        "$CLOUDFLARED_BIN" tunnel --url "http://127.0.0.1:$PORT" > "$CLOUDFLARE_LOG" 2>&1 &
+        "$CLOUDFLARED_BIN" tunnel --http-host-header "localhost" --url "http://127.0.0.1:$PORT" > "$CLOUDFLARE_LOG" 2>&1 &
         CF_PID=$!
         trap "kill $CF_PID 2>/dev/null || true" EXIT
 
-        # Background listener to display public URL as soon as generated
+        # Background listener to display public URL once model weights finish loading
         (
-            for i in {1..20}; do
+            PUBLIC_URL=""
+            for i in {1..30}; do
                 sleep 1
                 if [ -f "$CLOUDFLARE_LOG" ]; then
                     PUBLIC_URL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' "$CLOUDFLARE_LOG" | head -n 1)
                     if [ -n "$PUBLIC_URL" ]; then
                         echo ""
-                        echo "=========================================================="
-                        echo "  🌐 PUBLIC BROWSER URL (HTTPS + WSS):"
-                        echo "  👉 $PUBLIC_URL"
-                        echo "=========================================================="
-                        echo ""
+                        echo "[+] Tunnel created: $PUBLIC_URL"
+                        echo "[⏳] Waiting for 16B DiT model weights to finish loading into GPU..."
                         break
                     fi
                 fi
+            done
+
+            # Wait until FastAPI server is fully online and returns HTTP 200
+            for i in {1..120}; do
+                STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/" 2>/dev/null || echo "000")
+                if [ "$STATUS" = "200" ]; then
+                    echo ""
+                    echo "=========================================================="
+                    echo "  🎉 JOYAI-VIDEO-EDIT SERVER IS READY & ONLINE!"
+                    echo "  🌐 OPEN THIS IN YOUR BROWSER:"
+                    echo "  👉 $PUBLIC_URL"
+                    echo "=========================================================="
+                    echo ""
+                    break
+                fi
+                sleep 2
             done
         ) &
     fi
