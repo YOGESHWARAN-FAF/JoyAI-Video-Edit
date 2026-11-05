@@ -215,22 +215,9 @@ echo "     ssh -L $PORT:localhost:$PORT administrator@$SERVER_IP"
 echo "     Then open in your browser:"
 echo "     👉 http://localhost:$PORT/"
 echo ""
-if [ "$ENABLE_NGROK" = "1" ]; then
-    echo "  3. ngrok Public HTTPS URL:"
-    echo "     👉 ngrok live stream tunnel starting inside application..."
-else
-    echo "  3. Cloudflare Public HTTPS URL:"
-    echo "     👉 Automatic HTTPS tunnel starting inside application..."
-fi
+echo "  3. Public HTTPS URLs (Mobile & PC):"
+echo "     👉 Automatic HTTPS tunnels starting inside application..."
 echo "=========================================================="
-
-# Optional Pinggy tunnel
-if [ "$ENABLE_PINGGY" = "1" ]; then
-    echo "[+] Starting Pinggy public tunnel..."
-    ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:$PORT a.pinggy.io 2>&1 &
-    PINGGY_PID=$!
-    trap "kill $PINGGY_PID 2>/dev/null || true" EXIT
-fi
 
 EXTRA_ARGS=""
 if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
@@ -242,10 +229,8 @@ if [ "$ENABLE_NGROK" = "1" ]; then
     if [ -n "$NGROK_AUTHTOKEN" ]; then
         EXTRA_ARGS="$EXTRA_ARGS --ngrok-authtoken $NGROK_AUTHTOKEN"
     fi
-elif [ "$ENABLE_TUNNEL" = "1" ]; then
-    EXTRA_ARGS="$EXTRA_ARGS --cloudflare"
 else
-    EXTRA_ARGS="$EXTRA_ARGS --no-cloudflare"
+    EXTRA_ARGS="$EXTRA_ARGS --cloudflare --pinggy"
 fi
 
 bash "$REPO_ROOT/deploy/run_server.sh" $EXTRA_ARGS

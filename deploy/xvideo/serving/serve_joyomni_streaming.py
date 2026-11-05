@@ -237,6 +237,66 @@ class CloudflareTunnel:
             self.process = None
 
 
+class PinggyTunnel:
+    def __init__(self, port: int) -> None:
+        self.port = port
+        self.process: subprocess.Popen | None = None
+        self.public_url: str | None = None
+        self._stop_event = threading.Event()
+
+    def start(self) -> None:
+        cmd = [
+            "ssh",
+            "-p", "443",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ServerAliveInterval=30",
+            f"-R0:localhost:{self.port}",
+            "a.pinggy.io",
+        ]
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except Exception:
+            return
+
+        threading.Thread(target=self._monitor, daemon=True, name="pinggy-tunnel-monitor").start()
+
+    def _monitor(self) -> None:
+        if not self.process or not self.process.stdout:
+            return
+        pattern = re.compile(r"https://[-a-zA-Z0-9.]+\.pinggy(?:-free)?\.(?:link|net)")
+        for line in self.process.stdout:
+            if self._stop_event.is_set():
+                break
+            match = pattern.search(line)
+            if match and not self.public_url:
+                self.public_url = match.group(0)
+                print("\n" + "=" * 64, flush=True)
+                print("  📱 MOBILE & ALL-NETWORKS PUBLIC URL (WORKS ON JIO/AIRTEL):", flush=True)
+                print("  🌐 OPEN THIS LINK ON YOUR MOBILE OR HOME BROWSER:", flush=True)
+                print(f"  👉 {self.public_url}", flush=True)
+                print("  (Guaranteed unblocked on mobile carriers, HTTPS + WebCam)", flush=True)
+                print("=" * 64 + "\n", flush=True)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
+
+
 def _ensure_ngrok() -> str | None:
     # 1. System PATH
     found = shutil.which("ngrok")
@@ -974,16 +1034,23 @@ def create_app(args: argparse.Namespace) -> FastAPI:
         if args.preload:
             threading.Thread(target=get_runtime, daemon=True, name="joyomni-preload").start()
         cf = None
+        pg = None
         ng = None
         if getattr(args, "ngrok", False):
             ng = NgrokTunnel(args.port, authtoken=getattr(args, "ngrok_authtoken", None))
             ng.start()
-        elif getattr(args, "cloudflare", True):
-            cf = CloudflareTunnel(args.port)
-            cf.start()
+        else:
+            if getattr(args, "cloudflare", True):
+                cf = CloudflareTunnel(args.port)
+                cf.start()
+            if getattr(args, "pinggy", True):
+                pg = PinggyTunnel(args.port)
+                pg.start()
         yield
         if cf:
             cf.stop()
+        if pg:
+            pg.stop()
         if ng:
             ng.stop()
 
@@ -2410,6 +2477,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--cloudflare", action=argparse.BooleanOptionalAction, default=True,
                         help="Launch Cloudflare trycloudflare tunnel inside the application for instant HTTPS browser access.")
+    parser.add_argument("--pinggy", action=argparse.BooleanOptionalAction, default=True,
+                        help="Launch Pinggy public tunnel (unblocked on all mobile networks and ISPs).")
     parser.add_argument("--ngrok", action=argparse.BooleanOptionalAction, default=False,
                         help="Launch ngrok HTTPS tunnel for high-speed live streaming public access.")
     parser.add_argument("--ngrok-authtoken", type=str, default=None,
