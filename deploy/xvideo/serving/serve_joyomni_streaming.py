@@ -734,7 +734,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if args.preload:
-            get_runtime()
+            threading.Thread(target=get_runtime, daemon=True, name="joyomni-preload").start()
         yield
 
     app = FastAPI(lifespan=lifespan)

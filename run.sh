@@ -4,6 +4,7 @@
 # ==========================================================
 
 export PYTHONNOUSERSITE=1
+export JOYOMNI_SKIP_LOAD_WARMUP=1
 
 PORT=${PORT:-8090}
 HOST=${HOST:-"0.0.0.0"}
@@ -13,7 +14,8 @@ HEIGHT=${HEIGHT:-480}
 FPS=${FPS:-24}
 FORCE_NO_PE=""
 FORCE_QWEN=""
-ENABLE_TUNNEL=1
+ENABLE_TUNNEL=0
+ENABLE_PINGGY=0
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -56,12 +58,12 @@ while [[ $# -gt 0 ]]; do
             FPS=16
             shift
             ;;
-        --no-tunnel)
-            ENABLE_TUNNEL=0
+        --cloudflare)
+            ENABLE_TUNNEL=1
             shift
             ;;
-        --tunnel)
-            ENABLE_TUNNEL=1
+        --pinggy)
+            ENABLE_PINGGY=1
             shift
             ;;
         --help|-h)
@@ -77,8 +79,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --720p             Preset for 720p (1248x720 @ 16 FPS)"
             echo "  --qwen             Use local Qwen3.5-35B PE checkpoint"
             echo "  --no-pe            Run in raw direct prompt mode (no PE)"
-            echo "  --tunnel           Enable public Cloudflare URL (default: enabled)"
-            echo "  --no-tunnel        Disable public Cloudflare URL"
+            echo "  --pinggy           Start public Pinggy tunnel (works on all ISPs)"
+            echo "  --cloudflare       Start Cloudflare trycloudflare tunnel"
             exit 0
             ;;
         *)
@@ -137,6 +139,13 @@ export JOYOMNI_SAGE_ATTN=0
 export JOYOMNI_CUDA_GRAPH=1
 export JOYOMNI_LOW_VRAM=1
 
+# Detect local LAN IP address
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -z "$SERVER_IP" ]; then
+    SERVER_IP=$(ip -4 addr show scope global 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+fi
+SERVER_IP=${SERVER_IP:-"127.0.0.1"}
+
 # Check FP8 support in joyomni_ops
 if "$JOY_PYTHON" -c "import joyomni_ops; exit(0 if joyomni_ops.has_fp8() else 1)" 2>/dev/null; then
     export JOYOMNI_FP8_IMG=1
@@ -171,62 +180,42 @@ echo "[+] Resolution:    ${WIDTH}x${HEIGHT} @ ${FPS} FPS"
 echo "[+] FP8 Engine:    $FP8_STATUS"
 echo "[+] PE Engine:     $PE_STATUS"
 echo "[+] Low VRAM Mode: $JOYOMNI_LOW_VRAM"
-echo "[+] Local URL:     http://localhost:$PORT"
-echo "[+] Network URL:   http://$HOST:$PORT"
+echo ""
+echo "=========================================================="
+echo "          🌐 HOW TO OPEN IN YOUR BROWSER:                 "
+echo "=========================================================="
+echo "  1. Direct LAN URL (Fastest & No ISP blocks):"
+echo "     👉 http://$SERVER_IP:$PORT/"
+echo ""
+echo "  2. From your PC/Laptop via SSH Tunnel:"
+echo "     Run this on your computer's terminal/cmd:"
+echo "     ssh -L $PORT:localhost:$PORT administrator@$SERVER_IP"
+echo "     Then open in your browser:"
+echo "     👉 http://localhost:$PORT/"
+echo ""
+echo "  3. Local Server URL:"
+echo "     👉 http://localhost:$PORT/"
+echo "=========================================================="
 
-# Start Cloudflare Public Tunnel for instant browser access
+# Optional Pinggy tunnel
+if [ "$ENABLE_PINGGY" = "1" ]; then
+    echo "[+] Starting Pinggy public tunnel..."
+    ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:$PORT a.pinggy.io 2>&1 &
+    PINGGY_PID=$!
+    trap "kill $PINGGY_PID 2>/dev/null || true" EXIT
+fi
+
+# Optional Cloudflare tunnel
 if [ "$ENABLE_TUNNEL" = "1" ]; then
     CLOUDFLARED_BIN="$REPO_ROOT/deploy/tmp/cloudflared"
-    if [ ! -f "$CLOUDFLARED_BIN" ]; then
-        echo "[+] Downloading cloudflared for instant HTTPS public URL..."
-        mkdir -p "$REPO_ROOT/deploy/tmp"
-        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O "$CLOUDFLARED_BIN" 2>/dev/null || true
-        chmod +x "$CLOUDFLARED_BIN" 2>/dev/null || true
-    fi
-
     if [ -x "$CLOUDFLARED_BIN" ]; then
         CLOUDFLARE_LOG="$REPO_ROOT/deploy/tmp/cloudflared.log"
         rm -f "$CLOUDFLARE_LOG"
         "$CLOUDFLARED_BIN" tunnel --http-host-header "localhost" --url "http://127.0.0.1:$PORT" > "$CLOUDFLARE_LOG" 2>&1 &
         CF_PID=$!
         trap "kill $CF_PID 2>/dev/null || true" EXIT
-
-        # Background listener to display public URL once model weights finish loading
-        (
-            PUBLIC_URL=""
-            for i in {1..30}; do
-                sleep 1
-                if [ -f "$CLOUDFLARE_LOG" ]; then
-                    PUBLIC_URL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' "$CLOUDFLARE_LOG" | head -n 1)
-                    if [ -n "$PUBLIC_URL" ]; then
-                        echo ""
-                        echo "[+] Tunnel created: $PUBLIC_URL"
-                        echo "[⏳] Waiting for 16B DiT model weights to finish loading into GPU..."
-                        break
-                    fi
-                fi
-            done
-
-            # Wait until FastAPI server is fully online and returns HTTP 200
-            for i in {1..120}; do
-                STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/" 2>/dev/null || echo "000")
-                if [ "$STATUS" = "200" ]; then
-                    echo ""
-                    echo "=========================================================="
-                    echo "  🎉 JOYAI-VIDEO-EDIT SERVER IS READY & ONLINE!"
-                    echo "  🌐 OPEN THIS IN YOUR BROWSER:"
-                    echo "  👉 $PUBLIC_URL"
-                    echo "=========================================================="
-                    echo ""
-                    break
-                fi
-                sleep 2
-            done
-        ) &
     fi
 fi
-
-echo "=========================================================="
 
 EXTRA_ARGS=""
 if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
