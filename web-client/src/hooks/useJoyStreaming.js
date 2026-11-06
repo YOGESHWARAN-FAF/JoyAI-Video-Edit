@@ -48,7 +48,11 @@ export function useJoyStreaming(settings) {
     setActualFps(0);
 
     if (sendIntervalRef.current) {
-      clearInterval(sendIntervalRef.current);
+      if (typeof sendIntervalRef.current === 'object' && sendIntervalRef.current.cancel) {
+        sendIntervalRef.current.cancel();
+      } else {
+        clearInterval(sendIntervalRef.current);
+      }
       sendIntervalRef.current = null;
     }
     if (fpsTimerRef.current) {
@@ -119,7 +123,7 @@ export function useJoyStreaming(settings) {
           max_temporal_ids: Number(settings.maxTemporalIds || 8),
           freeze_kv_on_static: Boolean(settings.freezeKvOnStatic),
           static_diff_thresh: Number(settings.staticDiffThresh || 0.5),
-          max_inflight_chunks: 3,
+          max_inflight_chunks: 0, // 0 = never drop camera frames on backend
         };
 
         if (refImageBase64) {
@@ -238,7 +242,7 @@ export function useJoyStreaming(settings) {
         }, 500);
       }
 
-      // Adaptive camera uplink
+      // Zero-jitter adaptive camera uplink with hardware presentation timing
       function beginFrameUplink() {
         if (!captureCanvasRef.current) {
           captureCanvasRef.current = document.createElement('canvas');
@@ -248,61 +252,87 @@ export function useJoyStreaming(settings) {
         capCanvas.height = Number(settings.height || 480);
         const capCtx = capCanvas.getContext('2d', { willReadFrequently: true });
 
-        const targetFps = Math.max(12, Number(settings.fps || 24));
-        const targetInterval = 1000 / targetFps;
-        let tickInFlight = false;
+        const targetFps = Math.max(16, Math.min(30, Number(settings.fps || 24)));
+        const frameIntervalMs = 1000 / targetFps;
+        let inFlightEncodes = 0;
+        let lastCaptureTime = 0;
+        let animId = null;
 
-        sendIntervalRef.current = setInterval(() => {
+        const processTick = () => {
           if (!isStreamingRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             return;
           }
-          if (tickInFlight) return;
 
-          // Flow control guard:
-          // Keep chunk pipeline fed without overfilling socket buffer
-          const pending = Math.max(0, sentFramesRef.current - backendAckedFramesRef.current);
-          const socketBuffered = wsRef.current.bufferedAmount || 0;
-          if (pending >= 16 || socketBuffered > 131072) {
-            return;
+          const now = performance.now();
+          const elapsed = now - lastCaptureTime;
+
+          if (elapsed >= frameIntervalMs) {
+            const socketBuffered = wsRef.current.bufferedAmount || 0;
+            const pending = Math.max(0, sentFramesRef.current - backendAckedFramesRef.current);
+
+            // Flow control: allow up to 2 concurrent encodes and 32 pending frames
+            if (inFlightEncodes < 2 && pending < 32 && socketBuffered < 262144) {
+              const video = videoRef.current;
+              if (video && video.readyState >= 2) {
+                lastCaptureTime = now - (elapsed % frameIntervalMs);
+                inFlightEncodes += 1;
+                capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+
+                capCanvas.toBlob(
+                  (blob) => {
+                    inFlightEncodes = Math.max(0, inFlightEncodes - 1);
+                    try {
+                      if (blob && isStreamingRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                        sentFramesRef.current += 1;
+                        const seq = sentFramesRef.current;
+                        const tCaptureMs = Date.now();
+
+                        wsRef.current.send(
+                          JSON.stringify({
+                            session_id: currentSessionIdRef.current,
+                            type: 'frame_meta',
+                            seq,
+                            t_capture_ms: tCaptureMs,
+                          })
+                        );
+                        wsRef.current.send(blob);
+                      }
+                    } catch (e) {
+                      console.error('Frame uplink send error:', e);
+                    }
+                  },
+                  'image/jpeg',
+                  0.50
+                );
+              }
+            }
           }
 
-          const video = videoRef.current;
-          if (!video || video.readyState < 2) return;
+          const vid = videoRef.current;
+          if (vid && 'requestVideoFrameCallback' in vid) {
+            animId = vid.requestVideoFrameCallback(processTick);
+          } else {
+            animId = requestAnimationFrame(processTick);
+          }
+        };
 
-          tickInFlight = true;
-          capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+        const vid = videoRef.current;
+        if (vid && 'requestVideoFrameCallback' in vid) {
+          animId = vid.requestVideoFrameCallback(processTick);
+        } else {
+          animId = requestAnimationFrame(processTick);
+        }
 
-          capCanvas.toBlob(
-            (blob) => {
-              try {
-                if (blob && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                  sentFramesRef.current += 1;
-                  const seq = sentFramesRef.current;
-                  const tCaptureMs = Date.now();
-
-                  // 1. Send frame metadata header
-                  wsRef.current.send(
-                    JSON.stringify({
-                      session_id: currentSessionIdRef.current,
-                      type: 'frame_meta',
-                      seq,
-                      t_capture_ms: tCaptureMs,
-                    })
-                  );
-
-                  // 2. Send JPEG blob directly (55% quality: compresses in < 7ms)
-                  wsRef.current.send(blob);
-                }
-              } catch (e) {
-                console.error('Frame uplink send error:', e);
-              } finally {
-                tickInFlight = false;
-              }
-            },
-            'image/jpeg',
-            0.55 // Fast lightweight JPEG encoding
-          );
-        }, targetInterval);
+        sendIntervalRef.current = {
+          cancel: () => {
+            const v = videoRef.current;
+            if (v && 'cancelVideoFrameCallback' in v && animId != null) {
+              try { v.cancelVideoFrameCallback(animId); } catch (e) {}
+            } else if (animId != null) {
+              cancelAnimationFrame(animId);
+            }
+          }
+        };
       }
 
       return true;

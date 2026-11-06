@@ -19,14 +19,20 @@ export const DEFAULT_SETTINGS = {
   smoothPlayback: true,
 };
 
-const SETTINGS_KEY = 'joyai_tryon_settings_v1';
+const SETTINGS_KEY = 'joyai_tryon_settings_v3';
 
 export function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
+    if (!raw) {
+      localStorage.removeItem('joyai_tryon_settings_v1');
+      localStorage.removeItem('joyai_tryon_settings_v2');
+      return { ...DEFAULT_SETTINGS };
+    }
     const parsed = JSON.parse(raw);
-    if (parsed.detectionMode === 'face') parsed.detectionMode = 'near';
+    if (parsed.steps === undefined || Number(parsed.steps) > 1) parsed.steps = 1;
+    if (parsed.fps === undefined || Number(parsed.fps) < 24) parsed.fps = 24;
+    if (parsed.detectionMode === 'face' || parsed.detectionMode === 'near') parsed.detectionMode = 'off';
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch (err) {
     console.warn('Failed to load settings from localStorage', err);

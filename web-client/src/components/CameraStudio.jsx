@@ -20,14 +20,27 @@ export function CameraStudio({
   const initCamera = async () => {
     setCameraError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 840 },
-          height: { ideal: 480 },
-          facingMode: 'user',
-        },
-        audio: false,
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 840 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30, min: 20 },
+            facingMode: 'user',
+          },
+          audio: false,
+        });
+      } catch (e) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 840 },
+            height: { ideal: 480 },
+            facingMode: 'user',
+          },
+          audio: false,
+        });
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();

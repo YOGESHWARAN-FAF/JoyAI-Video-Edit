@@ -51,6 +51,14 @@ export function ActionControls({
         </div>
       )}
 
+      {/* Active Mode Pill while streaming */}
+      {isStreaming && (
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+          <Zap className="w-3.5 h-3.5" />
+          <span>Active Engine: 24 FPS Realtime DiT (1-Step, Fast-Accum FP8)</span>
+        </div>
+      )}
+
       {/* Main Action Buttons */}
       <div className="flex items-center gap-4 w-full max-w-md">
         {!isStreaming ? (
