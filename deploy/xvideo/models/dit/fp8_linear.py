@@ -163,7 +163,16 @@ class Fp8Linear(nn.Module):
                 num_warps=warps, num_stages=stages,
             )
             return y.reshape(*orig_shape[:-1], self.out_features)
-        sgl_per_token_quant_fp8(x_2d, x_q, x_scale)
-        y = fp8_scaled_mm(x_q, self.weight_fp8, x_scale, self.weight_scale,
-                          out_dtype=self.out_dtype, bias=self.bias)
+        try:
+            sgl_per_token_quant_fp8(x_2d, x_q, x_scale)
+            y = fp8_scaled_mm(x_q, self.weight_fp8, x_scale, self.weight_scale,
+                              out_dtype=self.out_dtype, bias=self.bias)
+        except NotImplementedError:
+            # Fallback for SM89 (Ada Lovelace / L40S) or GPUs without compiled CUTLASS sm89 kernels
+            if not hasattr(self, "_cached_weight") or self._cached_weight is None:
+                w_f32 = self.weight_fp8.to(torch.float32) * self.weight_scale.view(1, -1)
+                self._cached_weight = w_f32.to(dtype=self.out_dtype, device=x_2d.device)
+            y = torch.matmul(x_2d.to(self.out_dtype), self._cached_weight)
+            if self.bias is not None:
+                y = y + self.bias
         return y.reshape(*orig_shape[:-1], self.out_features)

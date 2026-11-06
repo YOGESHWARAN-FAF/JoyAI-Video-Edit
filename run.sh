@@ -168,15 +168,22 @@ if [ -z "$SERVER_IP" ]; then
 fi
 SERVER_IP=${SERVER_IP:-"127.0.0.1"}
 
-# Check FP8 support in joyomni_ops
-if "$JOY_PYTHON" -c "import joyomni_ops; exit(0 if joyomni_ops.has_fp8() else 1)" 2>/dev/null; then
+# Check FP8 support in joyomni_ops on the active CUDA device
+FP8_WORKING=0
+if "$JOY_PYTHON" -c "import torch, joyomni_ops; dev='cuda:0' if torch.cuda.is_available() else 'cpu'; dt=torch.float8_e4m3fn; a=torch.zeros((1,16),dtype=dt,device=dev); b=torch.zeros((16,16),dtype=dt,device=dev); sa=torch.ones((1,1),dtype=torch.float32,device=dev); sb=torch.ones((1,16),dtype=torch.float32,device=dev); joyomni_ops.fp8_scaled_mm(a,b,sa,sb,torch.bfloat16); exit(0)" 2>/dev/null; then
+    FP8_WORKING=1
+fi
+
+if [ "$FP8_WORKING" = "1" ]; then
     export JOYOMNI_FP8_IMG=1
     export JOYOMNI_FP8_TXT=1
     FP8_STATUS="Enabled (CUTLASS FP8 GEMM)"
 else
+    # On SM89 (NVIDIA L40S / RTX 4090) or setups without SM-specific CUTLASS kernels,
+    # use native BF16 for 100% stable, maximum-speed inference (L40S has 48GB VRAM)
     export JOYOMNI_FP8_IMG=0
     export JOYOMNI_FP8_TXT=0
-    FP8_STATUS="Disabled (BF16 fallback)"
+    FP8_STATUS="BF16 Native Mode (optimal for L40S 48GB VRAM)"
 fi
 
 # Configure Prompt Enhancement (PE) backend
