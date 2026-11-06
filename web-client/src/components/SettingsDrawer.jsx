@@ -82,6 +82,29 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
           })}
         </div>
 
+        {/* Quick Mode Presets */}
+        <div className="px-6 pt-3 pb-2 flex items-center gap-2 border-b border-white/5 bg-surface-900/50">
+          <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Presets:</span>
+          <button
+            type="button"
+            onClick={() => {
+              setForm((prev) => ({ ...prev, fps: 24, steps: 1, width: 840, height: 480, maxTemporalIds: 8 }));
+            }}
+            className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold flex items-center gap-1 transition"
+          >
+            ⚡ 24 FPS (Realtime)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setForm((prev) => ({ ...prev, fps: 16, steps: 2, width: 840, height: 480, maxTemporalIds: 8 }));
+            }}
+            className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 text-xs font-semibold flex items-center gap-1 transition"
+          >
+            ✨ 16 FPS (High Detail)
+          </button>
+        </div>
+
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* TAB 1: AUTH & SERVER */}
@@ -325,23 +348,31 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
                   DiT Inference Steps
                 </label>
                 <div className="grid grid-cols-4 gap-2">
-                  {[1, 2, 3, 4].map((step) => (
+                  {[
+                    { step: 1, label: '1 Step', sub: '(24 FPS)' },
+                    { step: 2, label: '2 Steps', sub: '(16 FPS)' },
+                    { step: 3, label: '3 Steps', sub: '(Quality)' },
+                    { step: 4, label: '4 Steps', sub: '(Max)' },
+                  ].map((item) => (
                     <button
-                      key={step}
+                      key={item.step}
                       type="button"
-                      onClick={() => handleChange('steps', step)}
-                      className={`py-2 rounded-lg border text-xs font-medium transition ${
-                        Number(form.steps) === step
+                      onClick={() => handleChange('steps', item.step)}
+                      className={`py-2 px-1 rounded-lg border text-center transition ${
+                        Number(form.steps) === item.step
                           ? 'border-brand-500 bg-brand-500/15 text-brand-300'
                           : 'border-white/10 bg-surface-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      {step} {step === 2 ? '(Optimal)' : ''}
+                      <div className="text-xs font-semibold">{item.label}</div>
+                      <div className="text-[10px] opacity-75">{item.sub}</div>
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  2 steps provide the optimal balance of speed and cloth synthesis quality.
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                  <span className="text-emerald-400 font-semibold">1 Step:</span> Runs at <span className="text-white font-medium">24–30 FPS stably</span> with minimal latency.
+                  <br />
+                  <span className="text-indigo-400 font-semibold">2 Steps:</span> Runs at <span className="text-white font-medium">16 FPS</span> with maximum fabric texture detail.
                 </p>
               </div>
 
