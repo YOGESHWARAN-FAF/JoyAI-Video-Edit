@@ -27,7 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from starlette.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from PIL import Image
@@ -114,6 +115,8 @@ def _ref_images_cached() -> dict[str, str]:
     return _REF_IMAGES_CACHE
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_WEB_CLIENT_DIST = _REPO_ROOT / "web-client" / "dist"
 _INDEX_HTML_PATH = Path(__file__).resolve().parents[2] / "static" / "index.html"
 
 def _load_index_html() -> str:
@@ -1071,8 +1074,36 @@ def create_app(args: argparse.Namespace) -> FastAPI:
 
     app.state.session_gate = SessionGate()
 
+    if (_WEB_CLIENT_DIST / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(_WEB_CLIENT_DIST / "assets")), name="assets")
+
     @app.get("/")
-    def index() -> HTMLResponse:
+    def index():
+        if (_WEB_CLIENT_DIST / "index.html").exists():
+            return FileResponse(str(_WEB_CLIENT_DIST / "index.html"))
+        default_detection = _default_detection_mode(args)
+        server_defaults = {
+            "width": args.width,
+            "height": args.height,
+            "fps": args.fps,
+            "num_inference_steps": args.num_inference_steps,
+            "seed": args.seed,
+            "kv_reset_frames": args.kv_reset_frames,
+            "output_quality": args.output_quality,
+            "detection_mode": default_detection,
+            "static_diff_thresh": args.static_diff_thresh,
+            "freeze_kv_on_static": args.freeze_kv_on_static,
+            "profile_timings": args.profile_timings,
+            "use_pe": args.use_pe,
+            "pe_available": pe_available(args.pe_backend),
+            "max_temporal_ids": args.max_temporal_ids,
+            "record_enabled": args.record_dir is not None,
+        }
+        html = _load_index_html().replace("__SERVER_DEFAULTS__", json.dumps(server_defaults))
+        return HTMLResponse(html)
+
+    @app.get("/legacy")
+    def legacy_index() -> HTMLResponse:
         default_detection = _default_detection_mode(args)
         server_defaults = {
             "width": args.width,
@@ -1095,7 +1126,12 @@ def create_app(args: argparse.Namespace) -> FastAPI:
         return HTMLResponse(html)
 
     @app.get("/ref-images")
-    def ref_images() -> JSONResponse:
+    def ref_images(request: Request) -> JSONResponse:
+        expected_key = getattr(args, "api_key", None)
+        if expected_key:
+            client_key = request.query_params.get("api_key") or request.headers.get("x-api-key")
+            if client_key != expected_key:
+                return JSONResponse({"error": "Unauthorized: Invalid API Key"}, status_code=401)
         return JSONResponse(_ref_images_cached())
 
     @app.get("/health")
@@ -1217,6 +1253,12 @@ def create_app(args: argparse.Namespace) -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
+        expected_key = getattr(args, "api_key", None)
+        if expected_key:
+            client_key = websocket.query_params.get("api_key") or websocket.headers.get("x-api-key")
+            if client_key != expected_key:
+                await websocket.close(code=4401, reason="Unauthorized: Invalid API Key")
+                return
         await websocket.accept()
         runtime = get_runtime()
         session = None
@@ -2563,6 +2605,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-inflight-chunks", type=int, default=2, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
     parser.add_argument("--session-close-timeout-s", type=float, default=20.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
+    parser.add_argument("--api-key", type=str, default=os.environ.get("JOYOMNI_API_KEY", None), help="Optional API key for client authentication.")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
     parser.add_argument("--record-codec", type=str, default="libx264", help="Recording video codec (PyAV/ffmpeg name).")

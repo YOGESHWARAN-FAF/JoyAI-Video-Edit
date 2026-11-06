@@ -19,10 +19,15 @@ ENABLE_TUNNEL=1
 ENABLE_PINGGY=0
 ENABLE_NGROK=0
 NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN:-}"
+API_KEY="${JOYOMNI_API_KEY:-}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --api-key)
+            API_KEY="$2"
+            shift 2
+            ;;
         --port)
             PORT="$2"
             shift 2
@@ -243,6 +248,9 @@ echo "     👉 Automatic HTTPS tunnels starting inside application..."
 echo "=========================================================="
 
 EXTRA_ARGS="--kv-reset-frames 0 --session-close-timeout-s 20.0"
+if [ -n "$API_KEY" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --api-key $API_KEY"
+fi
 if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --no-use-pe"
 fi
