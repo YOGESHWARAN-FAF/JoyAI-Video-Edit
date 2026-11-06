@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = {
   fps: 24,
   steps: 2,
   quality: 'auto', // 'auto', '85', '65', '45'
-  detectionMode: 'face', // 'face', 'full', 'off'
+  detectionMode: 'near', // 'near' (face), 'full', 'off'
   outputCodec: 'mjpeg', // 'mjpeg', 'h264'
   inputCodec: 'mjpeg',
   maxTemporalIds: 8,
@@ -26,6 +26,7 @@ export function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
+    if (parsed.detectionMode === 'face') parsed.detectionMode = 'near';
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch (err) {
     console.warn('Failed to load settings from localStorage', err);
@@ -91,3 +92,4 @@ export async function fetchServerRefImages(settings) {
     return [];
   }
 }
+

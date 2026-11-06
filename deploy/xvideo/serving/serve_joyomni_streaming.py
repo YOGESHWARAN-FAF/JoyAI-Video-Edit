@@ -656,6 +656,8 @@ def _resolve_detection_mode(payload, args, *, file_input):
         default = _default_detection_mode(args)
         mode = "off" if file_input and default == "near" else default
     mode = str(mode).strip().lower()
+    if mode in {"face", "near"}:
+        mode = "near"
     if mode not in {"off", "near", "full"}:
         raise ValueError("detection_mode must be off, near, or full")
     return mode

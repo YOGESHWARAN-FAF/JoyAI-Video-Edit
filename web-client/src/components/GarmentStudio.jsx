@@ -270,3 +270,4 @@ export function GarmentStudio({
     </div>
   );
 }
+

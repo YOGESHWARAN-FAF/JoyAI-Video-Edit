@@ -104,7 +104,7 @@ export function useJoyStreaming(settings) {
           height: Number(settings.height || 480),
           num_inference_steps: Number(settings.steps || 2),
           use_pe: false,
-          detection_mode: settings.detectionMode || 'face',
+          detection_mode: (settings.detectionMode === 'face' || settings.detectionMode === 'near') ? 'near' : (settings.detectionMode || 'near'),
           seed: seedVal,
           kv_reset_frames: 0,
           output_quality: settings.quality === 'auto' ? 75 : Number(settings.quality || 65),
@@ -270,3 +270,4 @@ export function useJoyStreaming(settings) {
     stopStreaming,
   };
 }
+

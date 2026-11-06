@@ -239,32 +239,35 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
                 </label>
                 <div className="space-y-2">
                   {[
-                    { id: 'face', title: 'Face Detection Mode (YuNet)', desc: 'Monitors face position & centering before editing starts. Best for upper garments & portraits.' },
+                    { id: 'near', title: 'Face Detection Mode (YuNet Near-Field)', desc: 'Monitors face position & centering before editing starts. Best for upper garments & portraits.' },
                     { id: 'full', title: 'Full-Body Detection Mode (YOLOv8)', desc: 'Enforces full torso & garment presence. Best for full-length outfits & dresses.' },
                     { id: 'off', title: 'Gate Disabled (Instant Edit)', desc: 'Starts editing immediately on first frame without waiting for centering.' },
-                  ].map((mode) => (
-                    <label
-                      key={mode.id}
-                      onClick={() => handleChange('detectionMode', mode.id)}
-                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${
-                        form.detectionMode === mode.id
-                          ? 'border-brand-500 bg-brand-500/10 text-white'
-                          : 'border-white/10 bg-surface-800 text-slate-300 hover:border-white/20'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="detectionMode"
-                        checked={form.detectionMode === mode.id}
-                        onChange={() => handleChange('detectionMode', mode.id)}
-                        className="mt-1 text-brand-600 focus:ring-brand-500"
-                      />
-                      <div>
-                        <div className="font-medium text-xs text-white">{mode.title}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">{mode.desc}</div>
-                      </div>
-                    </label>
-                  ))}
+                  ].map((mode) => {
+                    const isSelected = form.detectionMode === mode.id || (mode.id === 'near' && form.detectionMode === 'face');
+                    return (
+                      <label
+                        key={mode.id}
+                        onClick={() => handleChange('detectionMode', mode.id)}
+                        className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                          isSelected
+                            ? 'border-brand-500 bg-brand-500/10 text-white'
+                            : 'border-white/10 bg-surface-800 text-slate-300 hover:border-white/20'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="detectionMode"
+                          checked={isSelected}
+                          onChange={() => handleChange('detectionMode', mode.id)}
+                          className="mt-1 text-brand-600 focus:ring-brand-500"
+                        />
+                        <div>
+                          <div className="font-medium text-xs text-white">{mode.title}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{mode.desc}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -433,3 +436,4 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
     </div>
   );
 }
+

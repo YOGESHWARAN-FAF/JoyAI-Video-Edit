@@ -63,3 +63,4 @@ export function Header({ isConnected, isStreaming, actualFps, onOpenSettings }) 
     </header>
   );
 }
+
