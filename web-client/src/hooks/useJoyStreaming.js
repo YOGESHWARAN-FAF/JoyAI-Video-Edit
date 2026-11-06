@@ -16,16 +16,14 @@ export function useJoyStreaming(settings) {
   const videoRef = useRef(null);
   const captureCanvasRef = useRef(null);
   const outputCanvasRef = useRef(null);
-  const animFrameIdRef = useRef(null);
   const sendIntervalRef = useRef(null);
   const isStreamingRef = useRef(false);
   const fpsTimerRef = useRef(null);
   const currentSessionIdRef = useRef(null);
 
-  // Flow control & Jitter Buffer
+  // Flow control & Telemetry
   const sentFramesRef = useRef(0);
   const backendAckedFramesRef = useRef(0);
-  const outputQueueRef = useRef([]); // [{ bitmap, tCaptureMs }]
   const renderTimestampsRef = useRef([]); // [timestampMs]
   const lastOutputMetaRef = useRef(null);
 
@@ -57,22 +55,7 @@ export function useJoyStreaming(settings) {
       clearInterval(fpsTimerRef.current);
       fpsTimerRef.current = null;
     }
-    if (animFrameIdRef.current) {
-      cancelAnimationFrame(animFrameIdRef.current);
-      animFrameIdRef.current = null;
-    }
 
-    // Close any unrendered bitmaps in the jitter queue
-    if (outputQueueRef.current && outputQueueRef.current.length > 0) {
-      outputQueueRef.current.forEach((item) => {
-        try {
-          if (item.bitmap && typeof item.bitmap.close === 'function') {
-            item.bitmap.close();
-          }
-        } catch (e) {}
-      });
-      outputQueueRef.current = [];
-    }
     renderTimestampsRef.current = [];
     sentFramesRef.current = 0;
     backendAckedFramesRef.current = 0;
@@ -105,7 +88,6 @@ export function useJoyStreaming(settings) {
     currentSessionIdRef.current = sessionId;
     sentFramesRef.current = 0;
     backendAckedFramesRef.current = 0;
-    outputQueueRef.current = [];
     renderTimestampsRef.current = [];
 
     try {
@@ -125,7 +107,7 @@ export function useJoyStreaming(settings) {
           prompt: prompt || 'Keep the person and scene temporally consistent while applying the requested garment edit.',
           width: Number(settings.width || 840),
           height: Number(settings.height || 480),
-          num_inference_steps: Number(settings.steps || 1), // 1 step for stable 24 FPS
+          num_inference_steps: Number(settings.steps || 1), // 1 step = 24+ FPS
           use_pe: false,
           detection_mode: settings.detectionMode || 'off',
           seed: seedVal,
@@ -137,7 +119,7 @@ export function useJoyStreaming(settings) {
           max_temporal_ids: Number(settings.maxTemporalIds || 8),
           freeze_kv_on_static: Boolean(settings.freezeKvOnStatic),
           static_diff_thresh: Number(settings.staticDiffThresh || 0.5),
-          max_inflight_chunks: 4, // 4 inflight chunks gives generous headroom
+          max_inflight_chunks: 3,
         };
 
         if (refImageBase64) {
@@ -152,7 +134,7 @@ export function useJoyStreaming(settings) {
           try {
             const msg = JSON.parse(event.data);
             
-            // Flow control: track server frame acknowledgments from all message types
+            // Flow control: track frame acknowledgments
             if (msg.frames_in != null) {
               backendAckedFramesRef.current = Math.max(backendAckedFramesRef.current, Number(msg.frames_in));
             }
@@ -165,7 +147,7 @@ export function useJoyStreaming(settings) {
               isStreamingRef.current = true;
               setStatusText('Live Stream Active');
               beginFrameUplink();
-              startSmoothPlaybackLoop();
+              startFpsMeter();
             } else if (msg.type === 'output_frame') {
               lastOutputMetaRef.current = msg;
               if (msg.source_seq != null) {
@@ -196,29 +178,38 @@ export function useJoyStreaming(settings) {
             console.error('Error parsing JSON control message', e);
           }
         } else if (event.data instanceof ArrayBuffer) {
-          // Binary video frame received!
+          // Binary video frame received from GPU! Render immediately for ultra-low latency
           setFaceGateStatus('passed');
           setStatusText('Wear Active: Real-Time Stream Running');
 
           const blob = new Blob([event.data], { type: 'image/jpeg' });
-          try {
-            const bitmap = await createImageBitmap(blob);
-            const meta = lastOutputMetaRef.current;
-            const tCapture = meta && meta.t_capture_ms ? Number(meta.t_capture_ms) : Date.now();
-
-            // Push to playback queue (jitter buffer)
-            outputQueueRef.current.push({ bitmap, tCapture });
-
-            // Keep buffer bounded: if queue gets backlogged (> 8 frames), drop oldest to eliminate lag
-            while (outputQueueRef.current.length > 8) {
-              const dropped = outputQueueRef.current.shift();
-              if (dropped && dropped.bitmap) {
-                dropped.bitmap.close();
+          createImageBitmap(blob)
+            .then((bitmap) => {
+              const canvas = outputCanvasRef.current;
+              if (canvas) {
+                if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                  canvas.width = bitmap.width;
+                  canvas.height = bitmap.height;
+                }
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(bitmap, 0, 0);
               }
-            }
-          } catch (err) {
-            console.error('Error decoding video frame bitmap', err);
-          }
+              bitmap.close();
+
+              // Record render time for rolling FPS
+              const now = performance.now();
+              renderTimestampsRef.current.push(now);
+
+              // Latency readout
+              const meta = lastOutputMetaRef.current;
+              if (meta && meta.t_capture_ms) {
+                const lat = Date.now() - Number(meta.t_capture_ms);
+                if (lat > 0 && lat < 5000) setLatencyMs(Math.round(lat));
+              }
+            })
+            .catch((err) => {
+              console.error('Bitmap decode error', err);
+            });
         }
       };
 
@@ -238,74 +229,16 @@ export function useJoyStreaming(settings) {
         }
       };
 
-      // -------------------------------------------------------------
-      // 1. SMOOTH PLAYBACK JITTER BUFFER (Pacing & Rendering Loop)
-      // -------------------------------------------------------------
-      function startSmoothPlaybackLoop() {
-        let lastRenderTime = performance.now();
-        const targetFps = Math.max(12, Number(settings.fps || 24));
-        const targetFrameIntervalMs = 1000 / targetFps;
-
-        // Rolling Window FPS Counter: counts frames drawn in the last 1000ms
+      // Rolling FPS counter (counts frames rendered in the last 1000ms)
+      function startFpsMeter() {
         fpsTimerRef.current = setInterval(() => {
           const now = performance.now();
-          // Filter to timestamps rendered in the last 1000ms
           renderTimestampsRef.current = renderTimestampsRef.current.filter((t) => now - t <= 1000);
           setActualFps(renderTimestampsRef.current.length);
         }, 500);
-
-        function renderLoop(now) {
-          if (!isStreamingRef.current) return;
-
-          const queue = outputQueueRef.current;
-          const elapsed = now - lastRenderTime;
-
-          // Adaptive pacing threshold:
-          // If queue has accumulated > 4 frames, drain faster (0.5x interval) to purge lag.
-          // Otherwise pace at near 1:1 interval for smooth continuous playback.
-          const dynamicThreshold = queue.length > 4 
-            ? targetFrameIntervalMs * 0.5 
-            : queue.length > 2
-            ? targetFrameIntervalMs * 0.75
-            : targetFrameIntervalMs * 0.95;
-
-          if (queue.length > 0 && elapsed >= dynamicThreshold) {
-            const item = queue.shift();
-            if (item && item.bitmap) {
-              const canvas = outputCanvasRef.current;
-              if (canvas) {
-                if (canvas.width !== item.bitmap.width || canvas.height !== item.bitmap.height) {
-                  canvas.width = item.bitmap.width;
-                  canvas.height = item.bitmap.height;
-                }
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(item.bitmap, 0, 0);
-              }
-              item.bitmap.close();
-              lastRenderTime = now;
-
-              // Record timestamp for smooth rolling FPS measurement
-              renderTimestampsRef.current.push(now);
-
-              // Latency calculation
-              if (item.tCapture) {
-                const lat = Date.now() - item.tCapture;
-                if (lat > 0 && lat < 5000) {
-                  setLatencyMs(Math.round(lat));
-                }
-              }
-            }
-          }
-
-          animFrameIdRef.current = requestAnimationFrame(renderLoop);
-        }
-
-        animFrameIdRef.current = requestAnimationFrame(renderLoop);
       }
 
-      // -------------------------------------------------------------
-      // 2. ADAPTIVE UPLINK (Frame capture with backpressure guard)
-      // -------------------------------------------------------------
+      // Adaptive camera uplink
       function beginFrameUplink() {
         if (!captureCanvasRef.current) {
           captureCanvasRef.current = document.createElement('canvas');
@@ -326,10 +259,10 @@ export function useJoyStreaming(settings) {
           if (tickInFlight) return;
 
           // Flow control guard:
-          // Allow up to 24 pending frames before pacing, matching legacy MAX_BACKEND_PENDING_FRAMES
+          // Keep chunk pipeline fed without overfilling socket buffer
           const pending = Math.max(0, sentFramesRef.current - backendAckedFramesRef.current);
           const socketBuffered = wsRef.current.bufferedAmount || 0;
-          if (pending >= 24 || socketBuffered > 131072) {
+          if (pending >= 16 || socketBuffered > 131072) {
             return;
           }
 
@@ -357,7 +290,7 @@ export function useJoyStreaming(settings) {
                     })
                   );
 
-                  // 2. Send compressed JPEG blob directly (55% quality: compresses in < 7ms)
+                  // 2. Send JPEG blob directly (55% quality: compresses in < 7ms)
                   wsRef.current.send(blob);
                 }
               } catch (e) {

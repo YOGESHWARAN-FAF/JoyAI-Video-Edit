@@ -121,6 +121,8 @@ export default function App() {
                 onStop={stopStreaming}
                 hasGarment={Boolean(selectedGarment?.name || selectedGarment?.base64)}
                 errorMsg={errorMsg}
+                settings={settings}
+                onUpdateSettings={handleSaveSettings}
               />
             </div>
           </div>

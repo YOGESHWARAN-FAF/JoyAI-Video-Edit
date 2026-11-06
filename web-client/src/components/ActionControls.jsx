@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Square, RefreshCw, AlertCircle } from 'lucide-react';
+import { Sparkles, Square, RefreshCw, AlertCircle, Zap } from 'lucide-react';
 
 export function ActionControls({
   isStreaming,
@@ -7,7 +7,9 @@ export function ActionControls({
   onStart,
   onStop,
   hasGarment,
-  errorMsg
+  errorMsg,
+  settings,
+  onUpdateSettings
 }) {
   return (
     <div className="w-full flex flex-col items-center justify-center space-y-3 pt-2">
@@ -16,6 +18,36 @@ export function ActionControls({
         <div className="w-full max-w-xl flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
           <span className="flex-1 font-medium">{errorMsg}</span>
+        </div>
+      )}
+
+      {/* Mode Selector Pill */}
+      {!isStreaming && onUpdateSettings && (
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-surface-800 border border-white/10 text-xs">
+          <button
+            type="button"
+            onClick={() => onUpdateSettings({ ...settings, fps: 24, steps: 1, detectionMode: 'off' })}
+            className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition ${
+              Number(settings?.steps) === 1 && Number(settings?.fps) === 24
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-emerald-400" />
+            <span>⚡ 24 FPS Realtime (1 Step)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpdateSettings({ ...settings, fps: 16, steps: 2 })}
+            className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition ${
+              Number(settings?.steps) === 2
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>✨ 16 FPS High Detail (2 Steps)</span>
+          </button>
         </div>
       )}
 

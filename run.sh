@@ -169,7 +169,7 @@ export JOYOMNI_FPS="$FPS"
 export JOYOMNI_FA4_ATTN=0
 export JOYOMNI_SAGE_ATTN=0
 export JOYOMNI_CUDA_GRAPH=1
-export JOYOMNI_LOW_VRAM=1
+export JOYOMNI_LOW_VRAM=0
 
 # Detect local LAN IP address
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
