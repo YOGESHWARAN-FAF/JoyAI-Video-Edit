@@ -96,6 +96,18 @@ while [[ $# -gt 0 ]]; do
             export JOYOMNI_CUDA_GRAPH=0
             shift
             ;;
+        --low-vram)
+            export JOYOMNI_LOW_VRAM=1
+            shift
+            ;;
+        --no-low-vram)
+            export JOYOMNI_LOW_VRAM=0
+            shift
+            ;;
+        --kill-zombies|-k)
+            KILL_ZOMBIES=1
+            shift
+            ;;
         --help|-h)
             echo "Usage: bash run.sh [OPTIONS]"
             echo ""
@@ -107,6 +119,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --height <H>       Video height (default: 480)"
             echo "  --fps <FPS>        Streaming FPS (default: 24)"
             echo "  --720p             Preset for 720p (1248x720 @ 16 FPS)"
+            echo "  --low-vram         Enable progressive FP8 staging (default on, fits ≤48GB cards)"
+            echo "  --no-low-vram      Disable progressive staging"
+            echo "  --kill-zombies     Kill any lingering Python processes holding GPU VRAM"
             echo "  --qwen             Use local Qwen3.5-35B PE checkpoint"
             echo "  --no-pe            Run in raw direct prompt mode (no PE)"
             echo "  --ngrok [TOKEN]    Start public ngrok HTTPS tunnel (high-speed live stream)"
@@ -169,7 +184,9 @@ export JOYOMNI_FPS="$FPS"
 export JOYOMNI_FA4_ATTN=0
 export JOYOMNI_SAGE_ATTN=0
 export JOYOMNI_CUDA_GRAPH=1
-export JOYOMNI_LOW_VRAM=0
+export JOYOMNI_LOW_VRAM="${JOYOMNI_LOW_VRAM:-1}"
+export JOYOMNI_TE_OFFLOAD="${JOYOMNI_TE_OFFLOAD:-1}"
+export JOYOMNI_TE_PIN="${JOYOMNI_TE_PIN:-1}"
 
 # Detect local LAN IP address
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -217,8 +234,21 @@ else
     PE_STATUS="Raw Prompt Mode (Qwen not installed, runs directly)"
 fi
 
-# Free port if held by a previous run or stuck process
+# Free port and kill any orphaned streaming server processes
 fuser -k "$PORT/tcp" 2>/dev/null || true
+pkill -f "serve_joyomni_streaming.py" 2>/dev/null || true
+
+if [ "${KILL_ZOMBIES:-0}" = "1" ]; then
+    echo "[!] Killing zombie GPU processes on device $GPU_ID..."
+    fuser -k -9 "/dev/nvidia$GPU_ID" 2>/dev/null || true
+    sleep 1
+fi
+
+# Check GPU VRAM status and report any external processes
+OCCUPIED_GPU_PROCS=""
+if command -v nvidia-smi &>/dev/null; then
+    OCCUPIED_GPU_PROCS=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>/dev/null || true)
+fi
 
 echo "=========================================================="
 echo "          Launching JoyAI-Video-Edit Server               "
@@ -229,7 +259,11 @@ echo "[+] Port:          $PORT"
 echo "[+] Resolution:    ${WIDTH}x${HEIGHT} @ ${FPS} FPS"
 echo "[+] FP8 Engine:    $FP8_STATUS"
 echo "[+] PE Engine:     $PE_STATUS"
-echo "[+] Low VRAM Mode: $JOYOMNI_LOW_VRAM"
+echo "[+] Low VRAM Mode: $JOYOMNI_LOW_VRAM (progressive FP8 staging)"
+if [ -n "$OCCUPIED_GPU_PROCS" ]; then
+    echo "[!] Active GPU Compute Processes Detected:"
+    echo "$OCCUPIED_GPU_PROCS" | sed 's/^/    /'
+fi
 echo ""
 echo "=========================================================="
 echo "          🌐 HOW TO OPEN IN YOUR BROWSER:                 "
