@@ -19,11 +19,17 @@ export function useJoyStreaming(settings) {
   const animFrameIdRef = useRef(null);
   const sendIntervalRef = useRef(null);
   const isStreamingRef = useRef(false);
-  const frameCountRef = useRef(0);
   const fpsTimerRef = useRef(null);
   const currentSessionIdRef = useRef(null);
 
-  // Update ref
+  // Flow control & Jitter Buffer
+  const sentFramesRef = useRef(0);
+  const backendAckedFramesRef = useRef(0);
+  const outputQueueRef = useRef([]); // [{ bitmap, tCaptureMs }]
+  const renderTimestampsRef = useRef([]); // [timestampMs]
+  const lastOutputMetaRef = useRef(null);
+
+  // Synchronize state ref
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
@@ -41,6 +47,7 @@ export function useJoyStreaming(settings) {
     setStatusText('Disconnected');
     setFaceGateStatus('idle');
     setGateReason('');
+    setActualFps(0);
 
     if (sendIntervalRef.current) {
       clearInterval(sendIntervalRef.current);
@@ -54,6 +61,21 @@ export function useJoyStreaming(settings) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
     }
+
+    // Close any unrendered bitmaps in the jitter queue
+    if (outputQueueRef.current && outputQueueRef.current.length > 0) {
+      outputQueueRef.current.forEach((item) => {
+        try {
+          if (item.bitmap && typeof item.bitmap.close === 'function') {
+            item.bitmap.close();
+          }
+        } catch (e) {}
+      });
+      outputQueueRef.current = [];
+    }
+    renderTimestampsRef.current = [];
+    sentFramesRef.current = 0;
+    backendAckedFramesRef.current = 0;
 
     if (wsRef.current) {
       try {
@@ -81,14 +103,15 @@ export function useJoyStreaming(settings) {
 
     const sessionId = 'tryon_' + Math.random().toString(36).substring(2, 10);
     currentSessionIdRef.current = sessionId;
+    sentFramesRef.current = 0;
+    backendAckedFramesRef.current = 0;
+    outputQueueRef.current = [];
+    renderTimestampsRef.current = [];
 
     try {
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
-
-      let lastSendTime = 0;
-      let isBusySending = false;
 
       ws.onopen = () => {
         setIsConnected(true);
@@ -114,6 +137,7 @@ export function useJoyStreaming(settings) {
           max_temporal_ids: Number(settings.maxTemporalIds || 8),
           freeze_kv_on_static: Boolean(settings.freezeKvOnStatic),
           static_diff_thresh: Number(settings.staticDiffThresh || 0.5),
+          max_inflight_chunks: 3, // Prevent premature camera frame dropping on server
         };
 
         if (refImageBase64) {
@@ -127,11 +151,20 @@ export function useJoyStreaming(settings) {
         if (typeof event.data === 'string') {
           try {
             const msg = JSON.parse(event.data);
+            
+            // Flow control: track server frame acknowledgments
+            if (msg.frames_in != null) {
+              backendAckedFramesRef.current = Math.max(backendAckedFramesRef.current, Number(msg.frames_in));
+            }
+
             if (msg.type === 'started') {
               setIsStreaming(true);
               isStreamingRef.current = true;
               setStatusText('Live Stream Active');
               beginFrameUplink();
+              startSmoothPlaybackLoop();
+            } else if (msg.type === 'output_frame') {
+              lastOutputMetaRef.current = msg;
             } else if (msg.type === 'waiting_face') {
               setFaceGateStatus(msg.reason || 'waiting');
               setGateReason(msg.reason || '');
@@ -158,25 +191,27 @@ export function useJoyStreaming(settings) {
           }
         } else if (event.data instanceof ArrayBuffer) {
           // Binary video frame received!
-          frameCountRef.current += 1;
           setFaceGateStatus('passed');
           setStatusText('Wear Active: Real-Time Stream Running');
 
           const blob = new Blob([event.data], { type: 'image/jpeg' });
           try {
             const bitmap = await createImageBitmap(blob);
-            const canvas = outputCanvasRef.current;
-            if (canvas) {
-              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                canvas.width = bitmap.width;
-                canvas.height = bitmap.height;
+            const meta = lastOutputMetaRef.current;
+            const tCapture = meta && meta.t_capture_ms ? Number(meta.t_capture_ms) : Date.now();
+
+            // Push to playback queue (jitter buffer)
+            outputQueueRef.current.push({ bitmap, tCapture });
+
+            // Keep buffer bounded: if queue gets backlogged (> 8 frames), drop oldest to eliminate lag
+            while (outputQueueRef.current.length > 8) {
+              const dropped = outputQueueRef.current.shift();
+              if (dropped && dropped.bitmap) {
+                dropped.bitmap.close();
               }
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(bitmap, 0, 0);
             }
-            bitmap.close();
           } catch (err) {
-            // fallback via image tag if createImageBitmap fails
+            console.error('Error decoding video frame bitmap', err);
           }
         }
       };
@@ -197,7 +232,81 @@ export function useJoyStreaming(settings) {
         }
       };
 
-      // Helper function to send frames
+      // -------------------------------------------------------------
+      // 1. SMOOTH PLAYBACK JITTER BUFFER (Pacing & Rendering Loop)
+      // -------------------------------------------------------------
+      function startSmoothPlaybackLoop() {
+        let lastRenderTime = performance.now();
+        const targetFps = Math.max(12, Number(settings.fps || 24));
+        const targetFrameIntervalMs = 1000 / targetFps;
+
+        // Rolling Window FPS Counter (every 500ms)
+        fpsTimerRef.current = setInterval(() => {
+          const now = performance.now();
+          // Filter to timestamps in last 1200ms
+          renderTimestampsRef.current = renderTimestampsRef.current.filter((t) => now - t <= 1200);
+          const timestamps = renderTimestampsRef.current;
+
+          if (timestamps.length >= 2) {
+            const durationSec = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000;
+            if (durationSec > 0.2) {
+              const measuredFps = Math.round((timestamps.length - 1) / durationSec);
+              setActualFps(Math.min(60, measuredFps));
+            }
+          } else if (timestamps.length === 0) {
+            setActualFps(0);
+          }
+        }, 500);
+
+        function renderLoop(now) {
+          if (!isStreamingRef.current) return;
+
+          const queue = outputQueueRef.current;
+          const elapsed = now - lastRenderTime;
+
+          // Adaptive pacing: If queue has > 3 frames, drain slightly faster to keep latency low.
+          // Otherwise pace at target interval for smooth continuous video.
+          const dynamicThreshold = queue.length > 3 
+            ? targetFrameIntervalMs * 0.7 
+            : targetFrameIntervalMs * 0.95;
+
+          if (queue.length > 0 && elapsed >= dynamicThreshold) {
+            const item = queue.shift();
+            if (item && item.bitmap) {
+              const canvas = outputCanvasRef.current;
+              if (canvas) {
+                if (canvas.width !== item.bitmap.width || canvas.height !== item.bitmap.height) {
+                  canvas.width = item.bitmap.width;
+                  canvas.height = item.bitmap.height;
+                }
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(item.bitmap, 0, 0);
+              }
+              item.bitmap.close();
+              lastRenderTime = now;
+
+              // Record timestamp for smooth FPS measurement
+              renderTimestampsRef.current.push(now);
+
+              // Latency calculation
+              if (item.tCapture) {
+                const lat = Date.now() - item.tCapture;
+                if (lat > 0 && lat < 5000) {
+                  setLatencyMs(Math.round(lat));
+                }
+              }
+            }
+          }
+
+          animFrameIdRef.current = requestAnimationFrame(renderLoop);
+        }
+
+        animFrameIdRef.current = requestAnimationFrame(renderLoop);
+      }
+
+      // -------------------------------------------------------------
+      // 2. ADAPTIVE UPLINK (Frame capture with backpressure guard)
+      // -------------------------------------------------------------
       function beginFrameUplink() {
         if (!captureCanvasRef.current) {
           captureCanvasRef.current = document.createElement('canvas');
@@ -207,43 +316,61 @@ export function useJoyStreaming(settings) {
         capCanvas.height = Number(settings.height || 480);
         const capCtx = capCanvas.getContext('2d', { willReadFrequently: true });
 
-        const targetInterval = 1000 / Number(settings.fps || 24);
-
-        // FPS counter
-        fpsTimerRef.current = setInterval(() => {
-          setActualFps(frameCountRef.current);
-          frameCountRef.current = 0;
-        }, 1000);
+        const targetFps = Math.max(12, Number(settings.fps || 24));
+        const targetInterval = 1000 / targetFps;
+        let tickInFlight = false;
 
         sendIntervalRef.current = setInterval(() => {
           if (!isStreamingRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             return;
           }
-          if (isBusySending) return;
+          if (tickInFlight) return;
+
+          // Flow control guard:
+          // JoyAI processes frames in chunks of 4.
+          // If backend has 6 or more frames pending processing, or websocket buffer is congested,
+          // back off this tick to prevent server-side queue overflow and frame dropping!
+          const pending = Math.max(0, sentFramesRef.current - backendAckedFramesRef.current);
+          const socketBuffered = wsRef.current.bufferedAmount || 0;
+          if (pending >= 6 || socketBuffered > 65536) {
+            return;
+          }
 
           const video = videoRef.current;
           if (!video || video.readyState < 2) return;
 
-          isBusySending = true;
+          tickInFlight = true;
           capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
 
           capCanvas.toBlob(
             (blob) => {
-              if (blob && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                blob.arrayBuffer().then((buf) => {
-                  if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                    wsRef.current.send(buf);
-                  }
-                  isBusySending = false;
-                }).catch(() => {
-                  isBusySending = false;
-                });
-              } else {
-                isBusySending = false;
+              try {
+                if (blob && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  sentFramesRef.current += 1;
+                  const seq = sentFramesRef.current;
+                  const tCaptureMs = Date.now();
+
+                  // 1. Send frame metadata so the server knows sequence & timing
+                  wsRef.current.send(
+                    JSON.stringify({
+                      session_id: currentSessionIdRef.current,
+                      type: 'frame_meta',
+                      seq,
+                      t_capture_ms: tCaptureMs,
+                    })
+                  );
+
+                  // 2. Send compressed JPEG blob directly (fast & low overhead)
+                  wsRef.current.send(blob);
+                }
+              } catch (e) {
+                console.error('Frame uplink send error:', e);
+              } finally {
+                tickInFlight = false;
               }
             },
             'image/jpeg',
-            0.8
+            0.65 // Optimized 65% quality: 2x faster encoding and eliminates network congestion
           );
         }, targetInterval);
       }
@@ -270,4 +397,3 @@ export function useJoyStreaming(settings) {
     stopStreaming,
   };
 }
-

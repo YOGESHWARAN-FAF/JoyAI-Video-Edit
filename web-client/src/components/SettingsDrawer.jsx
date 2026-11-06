@@ -158,18 +158,22 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
                   Camera Stream Framerate
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[16, 24, 30].map((rate) => (
+                  {[
+                    { rate: 16, label: '16 FPS', hint: '(Stable)' },
+                    { rate: 24, label: '24 FPS', hint: '(Fast)' },
+                    { rate: 30, label: '30 FPS', hint: '(Max)' },
+                  ].map((item) => (
                     <button
-                      key={rate}
+                      key={item.rate}
                       type="button"
-                      onClick={() => handleChange('fps', rate)}
+                      onClick={() => handleChange('fps', item.rate)}
                       className={`py-2 rounded-lg border text-xs font-medium transition ${
-                        Number(form.fps) === rate
+                        Number(form.fps) === item.rate
                           ? 'border-brand-500 bg-brand-500/15 text-brand-300'
                           : 'border-white/10 bg-surface-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      {rate} FPS {rate === 24 ? '(Ideal)' : ''}
+                      {item.label} <span className="opacity-75">{item.hint}</span>
                     </button>
                   ))}
                 </div>
