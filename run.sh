@@ -281,7 +281,7 @@ echo "  3. Public HTTPS URLs (Mobile & PC):"
 echo "     👉 Automatic HTTPS tunnels starting inside application..."
 echo "=========================================================="
 
-EXTRA_ARGS="--kv-reset-frames 0 --session-close-timeout-s 20.0 --max-inflight-chunks 2"
+EXTRA_ARGS="--kv-reset-frames 0 --session-close-timeout-s 20.0 --max-inflight-chunks 2 --profile-timings"
 if [ -n "$API_KEY" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --api-key $API_KEY"
 fi

@@ -1203,12 +1203,13 @@ class JoyOmniV2VStreamingSession:
     def _start_async_workers(self) -> None:
         if self._encode_queue is not None:
             return
-        self._encode_queue = queue.Queue(maxsize=4)
-        self._dit_queue = queue.Queue(maxsize=4)
-        self._decode_queue = queue.Queue(maxsize=4)
-        self._pseudo_queue = queue.Queue(maxsize=4)
-        self._postprocess_queue = queue.Queue(maxsize=4)
-        self._result_queue = queue.Queue()
+        # Lean 1-chunk worker queues to eliminate buffer bloat and achieve sub-350ms glass-to-glass latency
+        self._encode_queue = queue.Queue(maxsize=1)
+        self._dit_queue = queue.Queue(maxsize=1)
+        self._decode_queue = queue.Queue(maxsize=1)
+        self._pseudo_queue = queue.Queue(maxsize=1)
+        self._postprocess_queue = queue.Queue(maxsize=1)
+        self._result_queue = queue.Queue(maxsize=2)
         use_streams = torch.cuda.is_available()
 
         def _stream_for(module_or_device, **kw):
