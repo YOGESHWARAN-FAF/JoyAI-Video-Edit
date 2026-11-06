@@ -20,6 +20,8 @@ export function useJoyStreaming(settings) {
   const isStreamingRef = useRef(false);
   const fpsTimerRef = useRef(null);
   const currentSessionIdRef = useRef(null);
+  const outputQueueRef = useRef([]); // [{ bitmap, tCaptureMs }]
+  const playbackTimerRef = useRef(null);
 
   // Flow control & Telemetry
   const sentFramesRef = useRef(0);
@@ -46,6 +48,19 @@ export function useJoyStreaming(settings) {
     setFaceGateStatus('idle');
     setGateReason('');
     setActualFps(0);
+
+    if (playbackTimerRef.current) {
+      cancelAnimationFrame(playbackTimerRef.current);
+      playbackTimerRef.current = null;
+    }
+    if (outputQueueRef.current) {
+      while (outputQueueRef.current.length > 0) {
+        const item = outputQueueRef.current.shift();
+        if (item && item.bitmap) {
+          try { item.bitmap.close(); } catch (e) {}
+        }
+      }
+    }
 
     if (sendIntervalRef.current) {
       if (typeof sendIntervalRef.current === 'object' && sendIntervalRef.current.cancel) {
@@ -93,6 +108,11 @@ export function useJoyStreaming(settings) {
     sentFramesRef.current = 0;
     backendAckedFramesRef.current = 0;
     renderTimestampsRef.current = [];
+    outputQueueRef.current = [];
+    if (playbackTimerRef.current) {
+      cancelAnimationFrame(playbackTimerRef.current);
+      playbackTimerRef.current = null;
+    }
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -123,7 +143,7 @@ export function useJoyStreaming(settings) {
           max_temporal_ids: Number(settings.maxTemporalIds || 8),
           freeze_kv_on_static: Boolean(settings.freezeKvOnStatic),
           static_diff_thresh: Number(settings.staticDiffThresh || 0.5),
-          max_inflight_chunks: 0, // 0 = never drop camera frames on backend
+          max_inflight_chunks: 2, // 2 chunks max keeps queue shallow and eliminates delay
         };
 
         if (refImageBase64) {
@@ -182,40 +202,90 @@ export function useJoyStreaming(settings) {
             console.error('Error parsing JSON control message', e);
           }
         } else if (event.data instanceof ArrayBuffer) {
-          // Binary video frame received from GPU! Render immediately for ultra-low latency
+          // Binary video frame received from GPU! Queue into adaptive 24 FPS pacer
           setFaceGateStatus('passed');
           setStatusText('Wear Active: Real-Time Stream Running');
 
+          const meta = lastOutputMetaRef.current;
           const blob = new Blob([event.data], { type: 'image/jpeg' });
           createImageBitmap(blob)
             .then((bitmap) => {
-              const canvas = outputCanvasRef.current;
-              if (canvas) {
-                if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                  canvas.width = bitmap.width;
-                  canvas.height = bitmap.height;
-                }
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(bitmap, 0, 0);
-              }
-              bitmap.close();
-
-              // Record render time for rolling FPS
-              const now = performance.now();
-              renderTimestampsRef.current.push(now);
+              outputQueueRef.current.push({
+                bitmap,
+                tCaptureMs: meta?.t_capture_ms || Date.now(),
+              });
 
               // Latency readout
-              const meta = lastOutputMetaRef.current;
               if (meta && meta.t_capture_ms) {
                 const lat = Date.now() - Number(meta.t_capture_ms);
-                if (lat > 0 && lat < 5000) setLatencyMs(Math.round(lat));
+                if (lat > 0 && lat < 10000) setLatencyMs(Math.round(lat));
               }
+
+              ensurePlaybackTimer();
             })
             .catch((err) => {
               console.error('Bitmap decode error', err);
             });
         }
       };
+
+      // Adaptive 24 FPS playback governor (smooths 8-frame chunk bursts into continuous 24 FPS stream)
+      function ensurePlaybackTimer() {
+        if (playbackTimerRef.current) return;
+
+        const targetFps = Math.max(16, Number(settings.fps || 24));
+        const baseIntervalMs = 1000 / targetFps; // ~41.6ms for 24 FPS
+        let lastDrawTime = performance.now();
+
+        const tickPlayback = () => {
+          if (!isStreamingRef.current) {
+            playbackTimerRef.current = null;
+            return;
+          }
+
+          const q = outputQueueRef.current;
+          const now = performance.now();
+
+          if (q.length > 0) {
+            // Low-latency backlog pruner:
+            // If backlog exceeds 10 frames (~400ms), drop oldest frames to lock mirror to real-time live edge
+            if (q.length > 10) {
+              while (q.length > 5) {
+                const dropped = q.shift();
+                if (dropped && dropped.bitmap) {
+                  try { dropped.bitmap.close(); } catch (e) {}
+                }
+              }
+            }
+
+            // Adaptive interval: if queue has 4+ frames, accelerate slightly (35ms) to catch up
+            const interval = q.length > 3 ? baseIntervalMs * 0.82 : baseIntervalMs;
+
+            if (now - lastDrawTime >= interval) {
+              const item = q.shift();
+              if (item && item.bitmap) {
+                const canvas = outputCanvasRef.current;
+                if (canvas) {
+                  if (canvas.width !== item.bitmap.width || canvas.height !== item.bitmap.height) {
+                    canvas.width = item.bitmap.width;
+                    canvas.height = item.bitmap.height;
+                  }
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(item.bitmap, 0, 0);
+                }
+                try { item.bitmap.close(); } catch (e) {}
+
+                lastDrawTime = now;
+                renderTimestampsRef.current.push(now);
+              }
+            }
+          }
+
+          playbackTimerRef.current = requestAnimationFrame(tickPlayback);
+        };
+
+        playbackTimerRef.current = requestAnimationFrame(tickPlayback);
+      }
 
       ws.onerror = (e) => {
         console.error('WebSocket error:', e);

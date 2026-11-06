@@ -2379,6 +2379,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             ws_debug["frames_dropped_backpressure"] = (
                                 int(ws_debug.get("frames_dropped_backpressure", 0)) + 1
                             )
+                            if len(session.pending_frames) > 0:
+                                session.pending_frames.clear()
+                                session.pending_metas.clear()
                             return []
 
                         if first_edit_capture_ms is None:
