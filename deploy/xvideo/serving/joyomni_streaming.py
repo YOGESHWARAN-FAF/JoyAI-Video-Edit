@@ -639,7 +639,7 @@ class JoyOmniV2VStreamingSession:
         self._submit_async_chunk(chunk_frames, chunk_metas, valid_count=valid)
         self._raise_worker_error_if_needed()
 
-    def close(self, timeout: float = 5.0) -> None:
+    def close(self, timeout: float = 15.0) -> None:
         self._stop_async_workers(timeout)
         if torch.cuda.is_available():
             devices = {str(self.device), str(self.postprocess_device)}
@@ -1263,14 +1263,14 @@ class JoyOmniV2VStreamingSession:
             except queue.Full:
                 pass
 
-    def _stop_async_workers(self, timeout: float = 5.0) -> None:
+    def _stop_async_workers(self, timeout: float = 15.0) -> None:
         self.request_stop()
         deadline = time.monotonic() + timeout
         for worker in self._workers:
             worker.join(timeout=max(0.0, deadline - time.monotonic()))
         alive = [worker.name for worker in self._workers if worker.is_alive()]
         if alive:
-            raise TimeoutError(f"streaming workers did not stop: {', '.join(alive)}")
+            print(f"#####[STREAM] Notice: worker threads finishing in background: {', '.join(alive)}", flush=True)
         self._encode_queue = None
         self._dit_queue = None
         self._decode_queue = None

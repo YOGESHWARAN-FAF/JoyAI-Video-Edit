@@ -229,9 +229,9 @@ echo "  3. Public HTTPS URLs (Mobile & PC):"
 echo "     👉 Automatic HTTPS tunnels starting inside application..."
 echo "=========================================================="
 
-EXTRA_ARGS=""
+EXTRA_ARGS="--kv-reset-frames 0 --session-close-timeout-s 20.0"
 if [ "$JOYOMNI_PE_BACKEND" = "api" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
-    EXTRA_ARGS="--no-use-pe"
+    EXTRA_ARGS="$EXTRA_ARGS --no-use-pe"
 fi
 
 if [ "$ENABLE_NGROK" = "1" ]; then

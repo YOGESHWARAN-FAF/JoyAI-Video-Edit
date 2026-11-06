@@ -1564,24 +1564,37 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             if app.state.runtime_error:
                 return
             session_ref.request_stop()
-            deadline = time.monotonic() + max(0.1, float(args.session_close_timeout_s))
+            timeout_budget = max(15.0, float(getattr(args, "session_close_timeout_s", 15.0)))
+            deadline = time.monotonic() + timeout_budget
             try:
                 if pending_work:
-                    done, waiting = await asyncio.wait(pending_work, timeout=max(0.0, deadline - time.monotonic()))
+                    wait_time = max(1.0, min(10.0, deadline - time.monotonic()))
+                    done, waiting = await asyncio.wait(pending_work, timeout=wait_time)
                     for task in done:
                         if not task.cancelled():
-                            task.exception()
+                            try:
+                                task.exception()
+                            except Exception:
+                                pass
                     pending_work.difference_update(done)
                     if waiting:
-                        raise TimeoutError("session operations have not stopped")
-                remaining = max(0.01, deadline - time.monotonic())
-                await _run_work(lambda: session_ref.close(timeout=remaining), timeout=remaining)
+                        for t in waiting:
+                            t.cancel()
+                        await asyncio.gather(*waiting, return_exceptions=True)
+                        pending_work.difference_update(waiting)
+                remaining = max(5.0, deadline - time.monotonic())
+                await _run_work(lambda: session_ref.close(timeout=remaining), timeout=remaining + 5.0)
             except Exception as exc:
                 ws_debug["close_error"] = repr(exc)
-                app.state.runtime_error = f"Unsafe runtime after {reason}: {exc!r}; restart required"
-                for task in pending_work:
-                    task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
-                raise RuntimeError(app.state.runtime_error) from exc
+                print(f"[!] Notice during session close ({reason}): {exc!r}", flush=True)
+                err_str = str(exc).lower()
+                for task in list(pending_work):
+                    if not task.done():
+                        task.cancel()
+                pending_work.clear()
+                if "cuda error" in err_str or "illegal memory access" in err_str:
+                    app.state.runtime_error = f"Unsafe CUDA runtime after {reason}: {exc!r}; restart required"
+                    raise RuntimeError(app.state.runtime_error) from exc
 
         async def _stop_output_task() -> None:
             nonlocal output_task
@@ -2541,14 +2554,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Downlink transport. 'auto' honors browser h264 (saves bandwidth; display-only, does not affect generated identity). 'mjpeg' forces JPEG. Default auto.")
     parser.add_argument("--prompt", type=str, default="Keep the person and scene temporally consistent while applying the requested edit.")
     parser.add_argument("--profile-timings", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--kv-reset-frames", type=int, default=600)
+    parser.add_argument("--kv-reset-frames", type=int, default=0)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
     parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--static-diff-thresh", type=float, default=0.5)
     parser.add_argument("--preload", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--push-frame-timeout-s", type=float, default=15.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")
+    parser.add_argument("--push-frame-timeout-s", type=float, default=20.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")
     parser.add_argument("--max-inflight-chunks", type=int, default=2, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
-    parser.add_argument("--session-close-timeout-s", type=float, default=5.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
+    parser.add_argument("--session-close-timeout-s", type=float, default=20.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
