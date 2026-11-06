@@ -192,6 +192,9 @@ else
     PE_STATUS="Raw Prompt Mode (Qwen not installed, runs directly)"
 fi
 
+# Free port if held by a previous run or stuck process
+fuser -k "$PORT/tcp" 2>/dev/null || true
+
 echo "=========================================================="
 echo "          Launching JoyAI-Video-Edit Server               "
 echo "=========================================================="
