@@ -99,7 +99,7 @@ export function useJoyStreaming(settings) {
 
     const wsUrl = getWsUrl(settings);
     setStatusText('Connecting to JoyAI Real-Time Engine...');
-    setFaceGateStatus('waiting');
+    setFaceGateStatus(settings.detectionMode === 'off' ? 'passed' : 'waiting');
 
     const sessionId = 'tryon_' + Math.random().toString(36).substring(2, 10);
     currentSessionIdRef.current = sessionId;
@@ -125,9 +125,9 @@ export function useJoyStreaming(settings) {
           prompt: prompt || 'Keep the person and scene temporally consistent while applying the requested garment edit.',
           width: Number(settings.width || 840),
           height: Number(settings.height || 480),
-          num_inference_steps: Number(settings.steps || 2),
+          num_inference_steps: Number(settings.steps || 1), // 1 step for stable 24 FPS
           use_pe: false,
-          detection_mode: (settings.detectionMode === 'face' || settings.detectionMode === 'near') ? 'near' : (settings.detectionMode || 'near'),
+          detection_mode: settings.detectionMode || 'off',
           seed: seedVal,
           kv_reset_frames: 0,
           output_quality: settings.quality === 'auto' ? 75 : Number(settings.quality || 65),
@@ -137,7 +137,7 @@ export function useJoyStreaming(settings) {
           max_temporal_ids: Number(settings.maxTemporalIds || 8),
           freeze_kv_on_static: Boolean(settings.freezeKvOnStatic),
           static_diff_thresh: Number(settings.staticDiffThresh || 0.5),
-          max_inflight_chunks: 3, // Prevent premature camera frame dropping on server
+          max_inflight_chunks: 4, // 4 inflight chunks gives generous headroom
         };
 
         if (refImageBase64) {
@@ -152,9 +152,12 @@ export function useJoyStreaming(settings) {
           try {
             const msg = JSON.parse(event.data);
             
-            // Flow control: track server frame acknowledgments
+            // Flow control: track server frame acknowledgments from all message types
             if (msg.frames_in != null) {
               backendAckedFramesRef.current = Math.max(backendAckedFramesRef.current, Number(msg.frames_in));
+            }
+            if (msg.source_seq != null) {
+              backendAckedFramesRef.current = Math.max(backendAckedFramesRef.current, Number(msg.source_seq));
             }
 
             if (msg.type === 'started') {
@@ -165,6 +168,9 @@ export function useJoyStreaming(settings) {
               startSmoothPlaybackLoop();
             } else if (msg.type === 'output_frame') {
               lastOutputMetaRef.current = msg;
+              if (msg.source_seq != null) {
+                backendAckedFramesRef.current = Math.max(backendAckedFramesRef.current, Number(msg.source_seq));
+              }
             } else if (msg.type === 'waiting_face') {
               setFaceGateStatus(msg.reason || 'waiting');
               setGateReason(msg.reason || '');
@@ -240,22 +246,12 @@ export function useJoyStreaming(settings) {
         const targetFps = Math.max(12, Number(settings.fps || 24));
         const targetFrameIntervalMs = 1000 / targetFps;
 
-        // Rolling Window FPS Counter (every 500ms)
+        // Rolling Window FPS Counter: counts frames drawn in the last 1000ms
         fpsTimerRef.current = setInterval(() => {
           const now = performance.now();
-          // Filter to timestamps in last 1200ms
-          renderTimestampsRef.current = renderTimestampsRef.current.filter((t) => now - t <= 1200);
-          const timestamps = renderTimestampsRef.current;
-
-          if (timestamps.length >= 2) {
-            const durationSec = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000;
-            if (durationSec > 0.2) {
-              const measuredFps = Math.round((timestamps.length - 1) / durationSec);
-              setActualFps(Math.min(60, measuredFps));
-            }
-          } else if (timestamps.length === 0) {
-            setActualFps(0);
-          }
+          // Filter to timestamps rendered in the last 1000ms
+          renderTimestampsRef.current = renderTimestampsRef.current.filter((t) => now - t <= 1000);
+          setActualFps(renderTimestampsRef.current.length);
         }, 500);
 
         function renderLoop(now) {
@@ -264,10 +260,13 @@ export function useJoyStreaming(settings) {
           const queue = outputQueueRef.current;
           const elapsed = now - lastRenderTime;
 
-          // Adaptive pacing: If queue has > 3 frames, drain slightly faster to keep latency low.
-          // Otherwise pace at target interval for smooth continuous video.
-          const dynamicThreshold = queue.length > 3 
-            ? targetFrameIntervalMs * 0.7 
+          // Adaptive pacing threshold:
+          // If queue has accumulated > 4 frames, drain faster (0.5x interval) to purge lag.
+          // Otherwise pace at near 1:1 interval for smooth continuous playback.
+          const dynamicThreshold = queue.length > 4 
+            ? targetFrameIntervalMs * 0.5 
+            : queue.length > 2
+            ? targetFrameIntervalMs * 0.75
             : targetFrameIntervalMs * 0.95;
 
           if (queue.length > 0 && elapsed >= dynamicThreshold) {
@@ -285,7 +284,7 @@ export function useJoyStreaming(settings) {
               item.bitmap.close();
               lastRenderTime = now;
 
-              // Record timestamp for smooth FPS measurement
+              // Record timestamp for smooth rolling FPS measurement
               renderTimestampsRef.current.push(now);
 
               // Latency calculation
@@ -327,12 +326,10 @@ export function useJoyStreaming(settings) {
           if (tickInFlight) return;
 
           // Flow control guard:
-          // JoyAI processes frames in chunks of 4.
-          // If backend has 6 or more frames pending processing, or websocket buffer is congested,
-          // back off this tick to prevent server-side queue overflow and frame dropping!
+          // Allow up to 24 pending frames before pacing, matching legacy MAX_BACKEND_PENDING_FRAMES
           const pending = Math.max(0, sentFramesRef.current - backendAckedFramesRef.current);
           const socketBuffered = wsRef.current.bufferedAmount || 0;
-          if (pending >= 6 || socketBuffered > 65536) {
+          if (pending >= 24 || socketBuffered > 131072) {
             return;
           }
 
@@ -350,7 +347,7 @@ export function useJoyStreaming(settings) {
                   const seq = sentFramesRef.current;
                   const tCaptureMs = Date.now();
 
-                  // 1. Send frame metadata so the server knows sequence & timing
+                  // 1. Send frame metadata header
                   wsRef.current.send(
                     JSON.stringify({
                       session_id: currentSessionIdRef.current,
@@ -360,7 +357,7 @@ export function useJoyStreaming(settings) {
                     })
                   );
 
-                  // 2. Send compressed JPEG blob directly (fast & low overhead)
+                  // 2. Send compressed JPEG blob directly (55% quality: compresses in < 7ms)
                   wsRef.current.send(blob);
                 }
               } catch (e) {
@@ -370,7 +367,7 @@ export function useJoyStreaming(settings) {
               }
             },
             'image/jpeg',
-            0.65 // Optimized 65% quality: 2x faster encoding and eliminates network congestion
+            0.55 // Fast lightweight JPEG encoding
           );
         }, targetInterval);
       }

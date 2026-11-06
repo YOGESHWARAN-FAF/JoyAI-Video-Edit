@@ -88,7 +88,15 @@ export function SettingsDrawer({ isOpen, onClose, settings, onSaveSettings }) {
           <button
             type="button"
             onClick={() => {
-              setForm((prev) => ({ ...prev, fps: 24, steps: 1, width: 840, height: 480, maxTemporalIds: 8 }));
+              setForm((prev) => ({ 
+                ...prev, 
+                fps: 24, 
+                steps: 1, 
+                width: 840, 
+                height: 480, 
+                detectionMode: 'off',
+                maxTemporalIds: 8 
+              }));
             }}
             className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold flex items-center gap-1 transition"
           >

@@ -2424,9 +2424,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                           "skipped": True, "next_chunk_needs": session.frames_per_next_chunk - len(session.pending_frames)})
                         continue
                     if sentinel == "__person_returned__":
-                        if pe_report and pe_report.get("enhanced_prompt"):
-                            session_prompt = pe_report["enhanced_prompt"]
-                        await _reset_session("person_returned")
+                        print("#####[PERSON-GATE] person returned -> resuming stream seamlessly without reset", flush=True)
                         continue
                 if isinstance(chunk_results, str) and chunk_results == "__gate_pe__":
                     if pe_task is None:
@@ -2488,12 +2486,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 ws_debug["frames_since_session_reset"] = frames_since_session_reset
                 if gate_state.get("recount"):
                     gate_state["recount"] = False
-                    print("#####[PERSON-GATE] person count changed -> re-edit (reset)", flush=True)
-
-                    if pe_report and pe_report.get("enhanced_prompt"):
-                        session_prompt = pe_report["enhanced_prompt"]
-                    await _reset_session("person_count_changed")
-                    continue
+                    print("#####[PERSON-GATE] person count changed -> preserved mid-stream for stable 24 FPS", flush=True)
                 await _send_json({
                     "type": "accepted", "frames_in": frames_in, "frames_out": frames_out,
                     "next_chunk_needs": session.frames_per_next_chunk - len(session.pending_frames),

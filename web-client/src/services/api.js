@@ -4,13 +4,13 @@ export const DEFAULT_SETTINGS = {
   width: 840,
   height: 480,
   fps: 24,
-  steps: 2,
+  steps: 1, // 1 step unlocks continuous, stable 24-30 FPS on L40S
   quality: 'auto', // 'auto', '85', '65', '45'
-  detectionMode: 'near', // 'near' (face), 'full', 'off'
+  detectionMode: 'off', // 'off' provides uninterrupted real-time video streaming without gate stalls
   outputCodec: 'mjpeg', // 'mjpeg', 'h264'
   inputCodec: 'mjpeg',
   maxTemporalIds: 8,
-  freezeKvOnStatic: true,
+  freezeKvOnStatic: false,
   staticDiffThresh: 0.5,
   faceScore: 0.35,
   stableFrames: 24,
