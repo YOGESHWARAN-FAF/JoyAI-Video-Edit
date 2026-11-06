@@ -5,6 +5,7 @@
 
 export PYTHONNOUSERSITE=1
 export JOYOMNI_SKIP_LOAD_WARMUP=1
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 PORT=${PORT:-8090}
 HOST=${HOST:-"0.0.0.0"}
@@ -84,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --pinggy)
             ENABLE_PINGGY=1
+            shift
+            ;;
+        --no-graph|--no-cuda-graph)
+            export JOYOMNI_CUDA_GRAPH=0
             shift
             ;;
         --help|-h)
@@ -168,7 +173,8 @@ if [ -z "$SERVER_IP" ]; then
 fi
 SERVER_IP=${SERVER_IP:-"127.0.0.1"}
 
-# Check FP8 support in joyomni_ops on the active CUDA device
+# Check GPU compute capability and FP8 engine
+CUDA_CAP=$("$JOY_PYTHON" -c "import torch; print(f'{torch.cuda.get_device_capability()[0]}{torch.cuda.get_device_capability()[1]}' if torch.cuda.is_available() else '0')" 2>/dev/null || echo "0")
 FP8_WORKING=0
 if "$JOY_PYTHON" -c "import torch, joyomni_ops; dev='cuda:0' if torch.cuda.is_available() else 'cpu'; dt=torch.float8_e4m3fn; a=torch.zeros((1,16),dtype=dt,device=dev); b=torch.zeros((16,16),dtype=dt,device=dev); sa=torch.ones((1,1),dtype=torch.float32,device=dev); sb=torch.ones((1,16),dtype=torch.float32,device=dev); joyomni_ops.fp8_scaled_mm(a,b,sa,sb,torch.bfloat16); exit(0)" 2>/dev/null; then
     FP8_WORKING=1
@@ -177,13 +183,20 @@ fi
 if [ "$FP8_WORKING" = "1" ]; then
     export JOYOMNI_FP8_IMG=1
     export JOYOMNI_FP8_TXT=1
+    export JOYOMNI_FP8_FAST_ACCUM=0
     FP8_STATUS="Enabled (CUTLASS FP8 GEMM)"
+elif [ "$CUDA_CAP" = "89" ]; then
+    # On SM89 (NVIDIA L40S / RTX 4090): use Triton Fast-Accum FP8 for high speed and light memory footprint (~18GB VRAM)
+    export JOYOMNI_FP8_IMG=1
+    export JOYOMNI_FP8_TXT=1
+    export JOYOMNI_FP8_FAST_ACCUM=1
+    FP8_STATUS="Enabled (Triton Fast-Accum FP8 for SM89 / L40S ~18GB VRAM)"
 else
-    # On SM89 (NVIDIA L40S / RTX 4090) or setups without SM-specific CUTLASS kernels,
-    # use native BF16 for 100% stable, maximum-speed inference (L40S has 48GB VRAM)
+    # Fallback to BF16
     export JOYOMNI_FP8_IMG=0
     export JOYOMNI_FP8_TXT=0
-    FP8_STATUS="BF16 Native Mode (optimal for L40S 48GB VRAM)"
+    export JOYOMNI_FP8_FAST_ACCUM=0
+    FP8_STATUS="BF16 Native Mode"
 fi
 
 # Configure Prompt Enhancement (PE) backend

@@ -19,6 +19,13 @@ FP8_MAX = torch.finfo(FP8_DTYPE).max
 _FAST_ACCUM = os.environ.get("JOYOMNI_FP8_FAST_ACCUM", "").strip().lower() in {
     "1", "true", "yes", "on"
 }
+if not _FAST_ACCUM and torch.cuda.is_available():
+    try:
+        # Auto-enable Triton Fast-Accum on SM89 (L40S / RTX 4090) where joyomni_ops lacks cutlass sm89 kernels
+        if torch.cuda.get_device_capability() == (8, 9):
+            _FAST_ACCUM = True
+    except Exception:
+        pass
 _FA_DIV = 16.0
 
 if _FAST_ACCUM:
@@ -168,11 +175,9 @@ class Fp8Linear(nn.Module):
             y = fp8_scaled_mm(x_q, self.weight_fp8, x_scale, self.weight_scale,
                               out_dtype=self.out_dtype, bias=self.bias)
         except NotImplementedError:
-            # Fallback for SM89 (Ada Lovelace / L40S) or GPUs without compiled CUTLASS sm89 kernels
-            if not hasattr(self, "_cached_weight") or self._cached_weight is None:
-                w_f32 = self.weight_fp8.to(torch.float32) * self.weight_scale.view(1, -1)
-                self._cached_weight = w_f32.to(dtype=self.out_dtype, device=x_2d.device)
-            y = torch.matmul(x_2d.to(self.out_dtype), self._cached_weight)
+            # Fallback for GPUs without compiled CUTLASS kernels: dequantize on-the-fly without persistent VRAM caching
+            w_deq = self.weight_fp8.to(self.out_dtype) * self.weight_scale.view(1, -1).to(self.out_dtype)
+            y = torch.matmul(x_2d.to(self.out_dtype), w_deq)
             if self.bias is not None:
                 y = y + self.bias
         return y.reshape(*orig_shape[:-1], self.out_features)

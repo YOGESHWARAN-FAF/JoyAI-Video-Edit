@@ -34,12 +34,23 @@ class DiagonalGaussianDistribution:
             )
 
     def sample(self, generator: torch.Generator | None = None) -> torch.Tensor:
-        sample = randn_tensor(
-            self.mean.shape,
-            generator=generator,
-            device=self.parameters.device,
-            dtype=self.parameters.dtype,
-        )
+        try:
+            sample = randn_tensor(
+                self.mean.shape,
+                generator=generator,
+                device=self.parameters.device,
+                dtype=self.parameters.dtype,
+            )
+        except RuntimeError as e:
+            if "Offset increment outside graph capture" in str(e) or "graph capture" in str(e):
+                sample = torch.randn(
+                    self.mean.shape,
+                    generator=generator,
+                    device="cpu",
+                    dtype=self.parameters.dtype,
+                ).to(self.parameters.device)
+            else:
+                raise
         x = self.mean + self.std * sample
         return x
 
