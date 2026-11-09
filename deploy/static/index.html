@@ -266,6 +266,7 @@
     <label id="gateToggle" class="pe-toggle keep-min"><input id="faceDetection" type="checkbox" checked style="width:auto" /> <span data-i18n="face_detection">人脸检测</span></label>
     <label class="pe-toggle keep-min"><input id="fullBodyDetection" type="checkbox" style="width:auto" /> <span data-i18n="full_body_detection">全身检测</span></label>
     <label id="profToggle" class="pe-toggle keep-min"><input id="profileTimings" type="checkbox" style="width:auto" /> <span data-i18n="prof_toggle">性能分析</span></label>
+    <label id="smoothToggle" class="pe-toggle keep-min"><input id="smoothPlayback" type="checkbox" checked style="width:auto" /> <span data-i18n="smooth_toggle">平滑播放</span></label>
     <span class="kvreset-field keep-min">
       <span data-i18n="upload_quality">上传清晰度</span>
       <span id="upqTier" class="qtier">
@@ -344,6 +345,7 @@ const I18N = {
     gate_full_body: "请让头部和双脚完整入镜，然后站稳",
     gate_full_body_unavailable: "全身检测暂不可用，请关闭该开关或检查服务",
     prof_toggle: "性能分析",
+    smooth_toggle: "平滑播放",
     upload_quality: "上传清晰度",
     download_quality: "下载清晰度",
     frame_speed: "送帧速度",
@@ -407,6 +409,7 @@ const I18N = {
     gate_full_body: "Show your head and feet, then hold still",
     gate_full_body_unavailable: "Full-body detection unavailable; disable this option or check the server",
     prof_toggle: "Profiling",
+    smooth_toggle: "Smooth Play",
     upload_quality: "Upload quality",
     download_quality: "Download quality",
     frame_speed: "Frame rate",
@@ -745,7 +748,9 @@ function noteBackendAck(msg) {
 }
 
 function smoothPlaybackEnabled() {
-  return sessionConfig.smooth_playback;
+  const el = document.getElementById("smoothPlayback");
+  if (el) return el.checked;
+  return sessionConfig.smooth_playback !== false;
 }
 
 function currentOrientation() {
@@ -986,7 +991,11 @@ function blankOutputPane() {
   outputCanvasCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 }
 
-function displayOutputFrame(item) {  if (!item) return;
+let lastDisplayTimeMs = 0;
+
+function displayOutputFrame(item) {
+  if (!item) return;
+  lastDisplayTimeMs = performance.now();
   if (item.meta && item.meta.t_capture_ms) lastShownCaptureMs = Number(item.meta.t_capture_ms);
   if (outputWaitingFace) {
     outputWaitingFace = false;
@@ -1025,31 +1034,38 @@ function displayOutputFrame(item) {  if (!item) return;
 }
 
 function effectivePlaybackIntervalMs() {
-  const base = Math.max(16, Math.round(1000 / outputPlaybackFps()));
+  const fps = outputPlaybackFps();
+  const base = Math.max(16, Math.round(1000 / fps));
   const q = outputFrameQueue.length;
-  const target = outputQueueTargetFrames();
-  if (q <= target) return base;
-  const over = (q - target) / Math.max(1, target);
-  const speed = Math.min(2, 1 + over);
-  return Math.max(8, Math.round(base / speed));
-}
-
-function alignTargetMs() {
-  return Math.min(2500, Math.max(200, alignMaxAgeMs + targetOutputQueueDelayMs()));
+  // Dynamic queue-depth pacing:
+  // Target depth is 3-4 frames (~120-160ms buffer).
+  // If queue has 5 or more frames, play slightly faster (~35ms @ 24fps) to smoothly drain without dropping.
+  if (q >= 5) return Math.max(16, Math.round(base * 0.85));
+  // If queue has only 1 frame left, stretch slightly (~48ms @ 24fps) to bridge smoothly to the next chunk arrival.
+  if (q <= 1) return Math.round(base * 1.15);
+  // Nominal interval (~42ms @ 24fps).
+  return base;
 }
 
 function pumpOutputFrame() {
   if (!smoothPlaybackEnabled()) return;
-  const T = alignTargetMs();
-  const now = Date.now();
-  let shown = 0;
-  while (outputFrameQueue.length > 0 && shown < 4) {
-    const head = outputFrameQueue[0];
-    const tcap = head.meta && Number(head.meta.t_capture_ms);
-    if (tcap && (now - tcap) < T) break;
-    displayOutputFrame(outputFrameQueue.shift());
-    shown++;
+
+  // Latency clamp: If queue ever builds up beyond 8 frames (e.g. after a network stall),
+  // drop oldest frames down to 4 so latency stays snappy (<350ms).
+  if (outputFrameQueue.length > 8) {
+    while (outputFrameQueue.length > 4) {
+      const dropped = outputFrameQueue.shift();
+      disposeItem(dropped);
+      outputQueueDroppedFrames += 1;
+    }
   }
+
+  // Display EXACTLY ONE FRAME per tick so every single frame is presented to the user's display!
+  if (outputFrameQueue.length > 0) {
+    const item = outputFrameQueue.shift();
+    if (item) displayOutputFrame(item);
+  }
+
   ensureOutputPlaybackTimer();
 }
 
@@ -1107,6 +1123,7 @@ function resetRunMetrics() {
   pendingOutputMeta = null;
   outputQueueDroppedFrames = 0;
   lastShownCaptureMs = 0;
+  lastDisplayTimeMs = 0;
   clearOutputQueue();
   hideOutputToast();
   blankOutputPane();
@@ -1308,6 +1325,7 @@ function enqueueOutputFrame(frame, meta) {
     const age = Date.now() - Number(meta.t_capture_ms);
     if (age > 0 && age < 5000) alignMaxAgeMs = Math.max(age, alignMaxAgeMs * 0.99);
   }
+  const wasEmpty = outputFrameQueue.length === 0;
   outputFrameQueue.push(item);
   if (tc) {
     let i = outputFrameQueue.length - 1;
@@ -1317,11 +1335,16 @@ function enqueueOutputFrame(frame, meta) {
     }
     outputFrameQueue[i] = item;
   }
-  while (outputFrameQueue.length > (outCodecH264 ? 32 : 120)) {
+  while (outputFrameQueue.length > (outCodecH264 ? 12 : 24)) {
     const dropped = outputFrameQueue.shift();
     if (dropped) { disposeItem(dropped); outputQueueDroppedFrames += 1; }
   }
-  ensureOutputPlaybackTimer();
+  // If queue was empty and it has been >= 25ms since last displayed frame, display first frame immediately
+  if (wasEmpty && (performance.now() - lastDisplayTimeMs >= 25)) {
+    pumpOutputFrame();
+  } else {
+    ensureOutputPlaybackTimer();
+  }
   updateMetrics();
 }
 
@@ -2636,9 +2659,23 @@ document.addEventListener("click", (e) => {
   if (sceneChipsEl && sceneChipsEl.contains(e.target)) return;
   closeCardsPop();
 });
-for (const id of ["usePe", "refImage", "profileTimings", "faceDetection", "fullBodyDetection"]) {
-  document.getElementById(id).addEventListener("input", updateMetrics);
-  document.getElementById(id).addEventListener("change", updateMetrics);
+for (const id of ["usePe", "refImage", "profileTimings", "faceDetection", "fullBodyDetection", "smoothPlayback"]) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("input", updateMetrics);
+    el.addEventListener("change", updateMetrics);
+  }
+}
+const smoothEl = document.getElementById("smoothPlayback");
+if (smoothEl) {
+  smoothEl.addEventListener("change", () => {
+    sessionConfig.smooth_playback = smoothEl.checked;
+    if (!smoothEl.checked) {
+      if (outputPlaybackTimer) { clearInterval(outputPlaybackTimer); outputPlaybackTimer = null; }
+    } else {
+      ensureOutputPlaybackTimer(true);
+    }
+  });
 }
 var upqTierEl = document.getElementById("upqTier");
 function highlightUpqTier(which) {
@@ -2783,6 +2820,8 @@ function applyServerDefaults() {
     b.classList.toggle("on", Number(b.getAttribute("data-fps")) === sessionConfig.fps);
   }
   document.getElementById("profileTimings").checked = sessionConfig.profile_timings;
+  const smoothInput = document.getElementById("smoothPlayback");
+  if (smoothInput) smoothInput.checked = sessionConfig.smooth_playback !== false;
   sourceDetectionModes.camera = sessionConfig.detection_mode;
   setDetectionMode(sourceDetectionModes[usingVideoFile ? "file" : "camera"]);
   if (sessionConfig.output_quality !== "auto") {
