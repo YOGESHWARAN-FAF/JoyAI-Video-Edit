@@ -14,6 +14,8 @@ import tempfile
 import threading
 import time
 import uuid
+import gc
+import torch
 from contextlib import asynccontextmanager
 from fractions import Fraction
 from pathlib import Path
@@ -1330,12 +1332,14 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                     task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
                 raise RuntimeError(app.state.runtime_error) from exc
             finally:
-                import gc
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.ipc_collect()
-                print(f"#####[PRODUCT] Session closed ({reason}); GPU VRAM purged cleanly.", flush=True)
+                try:
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                    print(f"#####[PRODUCT] Session closed ({reason}); GPU VRAM purged cleanly.", flush=True)
+                except Exception as _purge_exc:
+                    print(f"#####[PRODUCT] Notice during purge: {_purge_exc!r}", flush=True)
 
         async def _stop_output_task() -> None:
             nonlocal output_task
