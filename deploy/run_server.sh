@@ -28,6 +28,28 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH"
 
+# Pre-flight GPU VRAM check and stale process cleanup
+JOYOMNI_CLEAN_GPU="${JOYOMNI_CLEAN_GPU:-1}"
+if command -v nvidia-smi &>/dev/null; then
+  if [ "$JOYOMNI_CLEAN_GPU" = "1" ]; then
+    OCCUPIED_PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null || true)
+    if [ -n "$OCCUPIED_PIDS" ]; then
+      echo "#####[PREFLIGHT] Found active compute process(es) on GPU: $OCCUPIED_PIDS"
+      for p in $OCCUPIED_PIDS; do
+        if [ -n "$p" ] && [ "$p" != "$$" ]; then
+          echo "#####[PREFLIGHT] Terminating stale GPU process PID $p..."
+          kill -9 "$p" 2>/dev/null || true
+        fi
+      done
+      sleep 1
+    fi
+  fi
+  TOTAL_VRAM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1)
+  FREE_VRAM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -n 1)
+  USED_VRAM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -n 1)
+  echo "#####[PREFLIGHT] GPU 0 VRAM: Total=${TOTAL_VRAM}MiB | Free=${FREE_VRAM}MiB | Used=${USED_VRAM}MiB"
+fi
+
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="$HERE"
 
