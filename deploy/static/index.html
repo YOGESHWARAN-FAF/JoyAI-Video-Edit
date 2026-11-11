@@ -177,6 +177,99 @@
     @media (max-width: 1000px) and (orientation: landscape) {
       .media-box { aspect-ratio: 16 / 9; max-height: 60vh; }
     }
+    .trial-pill {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      padding: 5px 12px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+      transition: all 0.3s ease;
+    }
+    .trial-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      animation: trialPulse 1.5s infinite;
+    }
+    .trial-pill.warning {
+      background: rgba(220, 38, 38, 0.85);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+    .trial-pill.warning .trial-dot {
+      background: #ffffff;
+      box-shadow: 0 0 8px #ffffff;
+    }
+    @keyframes trialPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .trial-modal-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      animation: trialFadeIn 0.3s ease-out;
+    }
+    @keyframes trialFadeIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .trial-modal-card {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      padding: 26px 22px;
+      text-align: center;
+      max-width: 360px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+    .trial-modal-icon { font-size: 38px; margin-bottom: 8px; }
+    .trial-modal-card h3 {
+      margin: 8px 0;
+      font-size: 19px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    .trial-modal-card p {
+      margin: 0 0 18px;
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .trial-btn-primary {
+      width: 100%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .trial-btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
   </style>
 </head>
 <body>
@@ -232,6 +325,20 @@
       <div id="outputStartOverlay" class="overlay wait-overlay" style="display:none">
         <div class="idle-ico spin">⏳</div>
         <div id="outputStartHint" class="hint" data-i18n="busy_starting">正在启动</div>
+      </div>
+      <div id="trialBadge" class="trial-pill" style="display:none">
+        <span class="trial-dot"></span>
+        <span data-i18n="trial_tag">Trial:</span> <span id="trialCountdown">15</span>s
+      </div>
+      <div id="trialModal" class="trial-modal-overlay" style="display:none">
+        <div class="trial-modal-card">
+          <div class="trial-modal-icon">✨</div>
+          <h3 data-i18n="trial_complete_title">15-Second Try-On Complete!</h3>
+          <p data-i18n="trial_complete_desc">GPU memory has been freed and reset. Choose another outfit or try a new style!</p>
+          <div class="trial-actions">
+            <button id="btnTryAnother" type="button" class="trial-btn-primary" data-i18n="try_another">Try Another Outfit</button>
+          </div>
+        </div>
       </div>
       <div id="outputToast" class="toast"></div>
     </div>
@@ -385,6 +492,10 @@ const I18N = {
     flow_drop_tail: " · 带宽不足，正在丢帧保延迟",
     up_auto_tail: " · 上行已自动降至中档",
     res_notice: "本演示运行在 {res}，而非模型原生的 1248×720 分辨率，画质与编辑效果会有所下降。",
+    trial_tag: "体验倒计时:",
+    trial_complete_title: "15秒体验已完成！",
+    trial_complete_desc: "显存已彻底清理重置。换一套服装或尝试新风格吧！",
+    try_another: "再试一套服装",
   },
   en: {
     tagline: "Streaming video editing",
@@ -449,6 +560,10 @@ const I18N = {
     flow_drop_tail: " · bandwidth limited, dropping frames",
     up_auto_tail: " · uplink auto-lowered to mid",
     res_notice: "This demo runs at {res}, not the model's native 1248×720 resolution; visual quality and edit fidelity are reduced.",
+    trial_tag: "Trial:",
+    trial_complete_title: "15-Second Try-On Complete!",
+    trial_complete_desc: "GPU memory has been freed and reset. Choose another outfit or try a new style!",
+    try_another: "Try Another Outfit",
   },
 };
 let currentLang = localStorage.getItem("joyomni_lang") || "en";
@@ -991,6 +1106,46 @@ function blankOutputPane() {
   outputCanvasCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
 }
 
+let trialTimer = null;
+let trialSecRemaining = 15;
+
+function startTrialCountdown(sec = 15) {
+  if (trialTimer) clearInterval(trialTimer);
+  trialSecRemaining = sec;
+  const badge = document.getElementById("trialBadge");
+  const countEl = document.getElementById("trialCountdown");
+  const modal = document.getElementById("trialModal");
+  if (modal) modal.style.display = "none";
+  if (badge && countEl) {
+    badge.style.display = "flex";
+    badge.classList.remove("warning");
+    countEl.textContent = trialSecRemaining;
+    trialTimer = setInterval(() => {
+      trialSecRemaining--;
+      if (trialSecRemaining <= 5) {
+        badge.classList.add("warning");
+      }
+      if (trialSecRemaining <= 0) {
+        clearInterval(trialTimer);
+        trialTimer = null;
+        countEl.textContent = "0";
+        handleTrialCompleted();
+      } else {
+        countEl.textContent = trialSecRemaining;
+      }
+    }, 1000);
+  }
+}
+
+function handleTrialCompleted() {
+  if (trialTimer) { clearInterval(trialTimer); trialTimer = null; }
+  const badge = document.getElementById("trialBadge");
+  if (badge) badge.style.display = "none";
+  const modal = document.getElementById("trialModal");
+  if (modal) modal.style.display = "flex";
+  stopActiveRun();
+}
+
 let lastDisplayTimeMs = 0;
 
 function displayOutputFrame(item) {
@@ -1022,6 +1177,9 @@ function displayOutputFrame(item) {
   }
   displayedFrames += 1;
   displayedFramesWindow += 1;
+  if (displayedFrames === 1) {
+    startTrialCountdown(15);
+  }
   const meta = item.meta;
   if (meta) {
     const latency = Date.now() - Number(meta.t_capture_ms || Date.now());
@@ -1674,6 +1832,10 @@ async function start() {
       const msg = JSON.parse(event.data);
       if (msg.session_id && msg.session_id !== activeSessionId) return;
       noteBackendAck(msg);
+      if (msg.type === "trial_completed") {
+        handleTrialCompleted();
+        return;
+      }
       if (msg.type === "queue_position") {
         const ahead = Number(msg.ahead != null ? msg.ahead : msg.position) || 0;
         setSendBusy(true, t("busy_queue") + ahead);
@@ -1942,6 +2104,9 @@ async function start() {
 }
 
 function stopActiveRun() {
+  if (trialTimer) { clearInterval(trialTimer); trialTimer = null; }
+  const trialB = document.getElementById("trialBadge");
+  if (trialB) trialB.style.display = "none";
   if (timer) clearInterval(timer);
   timer = null;
   stopVideoPull();
@@ -1969,6 +2134,8 @@ function stopActiveRun() {
 
 async function send() {
   if (startingRun) return;
+  const trialM = document.getElementById("trialModal");
+  if (trialM) trialM.style.display = "none";
   if (ws && ws.readyState === WebSocket.OPEN && sessionGranted) {
     startingRun = true;
     setSendBusy(true, t("busy_resetting"));
@@ -1990,15 +2157,28 @@ async function send() {
 
 sendBtn.onclick = send;
 
+const btnTryAnotherEl = document.getElementById("btnTryAnother");
+if (btnTryAnotherEl) {
+  btnTryAnotherEl.onclick = () => {
+    const trialM = document.getElementById("trialModal");
+    if (trialM) trialM.style.display = "none";
+    const promptInput = document.getElementById("prompt");
+    if (promptInput) {
+      promptInput.focus();
+      promptInput.select();
+    }
+  };
+}
+
 const PROMPT_GROUPS = [
   {
     key: "change_clothes",
     label: "实时换装", label_en: "Real-Time Outfit Change",
     cases: [
-      { title: "白T恤", title_en: "White Tee", desc: "上衣换成白色圆领纯棉T恤", desc_en: "Top → white crew-neck cotton tee", text: "将主角的上衣换成白色圆领纯棉 T 恤。", text_en: "Replace the subject's top with a white crew-neck cotton T-shirt." },
-      { title: "皮夹克", title_en: "Leather Jacket", desc: "外套换成哑光黑色皮质机车夹克", desc_en: "Jacket → matte black leather biker jacket", text: "将主角的外套换成哑光黑色皮质机车夹克。", text_en: "Replace the subject's jacket with a matte black leather biker jacket." },
-      { title: "汉服", title_en: "Hanfu", desc: "换成传统汉服交领右衽上衣", desc_en: "Traditional cross-collar Hanfu top", text: "将主角的服装换成传统汉服交领右衽上衣。", text_en: "Replace the subject's outfit with a traditional cross-collar (right-lapel) Hanfu top." },
-      { title: "学院风衬衫", title_en: "Preppy Shirt", desc: "白衬衫配藏青V领马甲加酒红领带", desc_en: "White shirt, navy V-vest, wine tie", text: "将主角的上衣换成白衬衫搭配藏青色 V 领马甲和酒红色领带。", text_en: "Replace the subject's top with a white shirt paired with a navy V-neck vest and a wine-red tie." },
+      { title: "白T恤", title_en: "White Tee", desc: "上衣换成白色圆领纯棉T恤", desc_en: "Top → white crew-neck cotton tee", text: "将主角的上衣换成白色圆领纯棉 T 恤。保持面部五官、发型肤色及背景完全一致不变。", text_en: "Replace only the subject's top clothing with a clean white crew-neck cotton T-shirt. Keep the subject's face, facial features, facial identity, skin tone, hair, and the background completely unchanged and identical to the original." },
+      { title: "皮夹克", title_en: "Leather Jacket", desc: "外套换成哑光黑色皮质机车夹克", desc_en: "Jacket → matte black leather biker jacket", text: "将主角的外套换成哑光黑色皮质机车夹克。保持面部五官、发型肤色及背景完全一致不变。", text_en: "Replace only the subject's top clothing with a matte black leather biker jacket. Keep the subject's face, facial features, facial identity, skin tone, hair, and the background completely unchanged and identical to the original." },
+      { title: "汉服", title_en: "Hanfu", desc: "换成传统汉服交领右衽上衣", desc_en: "Traditional cross-collar Hanfu top", text: "将主角的服装换成传统汉服交领右衽上衣。保持面部五官、发型肤色及背景完全一致不变。", text_en: "Replace only the subject's top clothing with a traditional cross-collar Hanfu top. Keep the subject's face, facial features, facial identity, skin tone, hair, and the background completely unchanged and identical to the original." },
+      { title: "学院风衬衫", title_en: "Preppy Shirt", desc: "白衬衫配藏青V领马甲加酒红领带", desc_en: "White shirt, navy V-vest, wine tie", text: "将主角的上衣换成白衬衫搭配藏青色 V 领马甲和酒红色领带。保持面部五官、发型肤色及背景完全一致不变。", text_en: "Replace only the subject's top clothing with a white shirt paired with a navy V-neck vest and wine-red tie. Keep the subject's face, facial features, facial identity, skin tone, hair, and the background completely unchanged and identical to the original." },
       { title: "京东定制帽 + 墨镜", title_en: "Custom JD Cap + Shades", desc: "戴上“京东”的红色鸭舌帽和墨镜", desc_en: "Red cap reading “京东” plus sunglasses", text: "给主角戴上写着“京东”两个汉字的红色鸭舌帽和墨镜。", text_en: "Put a red cap printed with the Chinese characters \"京东\" and a pair of sunglasses on the subject." },
     ],
   },

@@ -985,6 +985,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
         stop_output_pump = asyncio.Event()
         output_task: asyncio.Task[None] | None = None
         output_processing = False
+        trial_duration_s = max(0.0, float(getattr(args, "trial_duration_s", 15.0) or 0.0))
+        trial_start_mono: float | None = None
+        trial_completed = False
 
         flow = {"recv": None, "at": 0.0, "dropped": 0, "congested": False,
                 "base": 0, "has_ack": False, "probe": 0, "clamped": False,
@@ -1252,17 +1255,37 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             )
 
         async def _output_pump(session_ref) -> None:
-            nonlocal completed_frames, output_processing
+            nonlocal completed_frames, output_processing, trial_start_mono, trial_completed
             while not stop_output_pump.is_set():
                 result = await asyncio.to_thread(session_ref.wait_async_result, 0.05)
                 if result is None:
                     continue
+                if trial_start_mono is None:
+                    trial_start_mono = time.monotonic()
                 output_processing = True
                 try:
                     await _send_chunk_result(result)
                     completed_frames += min(len(result.jpegs), result.valid_count) if result.valid_count is not None else len(result.jpegs)
                 finally:
                     output_processing = False
+
+                if trial_duration_s > 0 and trial_start_mono is not None and not trial_completed:
+                    elapsed_trial = time.monotonic() - trial_start_mono
+                    if elapsed_trial >= trial_duration_s:
+                        trial_completed = True
+                        print(
+                            f"#####[PRODUCT] 15s trial limit reached ({elapsed_trial:.2f}s >= {trial_duration_s:.1f}s). Finalizing session.",
+                            flush=True,
+                        )
+                        async with send_lock:
+                            await _ws_send_json({
+                                "type": "trial_completed",
+                                "duration_s": trial_duration_s,
+                                "elapsed_s": round(elapsed_trial, 2),
+                                "reason": "15-second product trial completed",
+                            })
+                        stop_output_pump.set()
+                        break
 
         def _create_session():
             if app.state.runtime_error:
@@ -1306,6 +1329,13 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 for task in pending_work:
                     task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
                 raise RuntimeError(app.state.runtime_error) from exc
+            finally:
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                print(f"#####[PRODUCT] Session closed ({reason}); GPU VRAM purged cleanly.", flush=True)
 
         async def _stop_output_task() -> None:
             nonlocal output_task
@@ -1477,6 +1507,12 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             while True:
                 if app.state.runtime_error:
                     raise RuntimeError(app.state.runtime_error)
+                if trial_completed and session is not None:
+                    await _stop_output_task()
+                    await _close_session_safely(session, "trial_completed")
+                    if getattr(app.state, "active_session", None) is session:
+                        app.state.active_session = None
+                    session = None
                 if output_task is not None and output_task.done():
                     output_task.result()
                 if (frames_out != last_frames_out or pe_task is not None or output_processing
@@ -1518,6 +1554,10 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             session = None
 
                         session_id = str(payload.get("session_id") or uuid.uuid4().hex)
+                        trial_start_mono = None
+                        trial_completed = False
+                        if "trial_duration_s" in payload:
+                            trial_duration_s = max(0.0, float(payload["trial_duration_s"]))
                         frames_in = frames_out = edit_frames = completed_frames = last_frames_out = 0
                         next_frame_meta = None
                         ws_debug.update(frames_in=0, frames_out=0, output_bytes=0, chunk_results_sent=0,
@@ -1790,6 +1830,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 if "bytes" not in message or message["bytes"] is None:
                     if message.get("type") == "websocket.disconnect":
                         break
+                    continue
+                if trial_completed:
                     continue
                 if session is None:
                     await _send_json({"type": "error", "message": "send start JSON before frames"})
@@ -2239,6 +2281,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Downlink transport. 'auto' honors browser h264 (saves bandwidth; display-only, does not affect generated identity). 'mjpeg' forces JPEG. Default auto.")
     parser.add_argument("--prompt", type=str, default="Keep the person and scene temporally consistent while applying the requested edit.")
     parser.add_argument("--profile-timings", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--trial-duration-s", type=float,
+                        default=float(os.environ.get("JOYOMNI_TRIAL_DURATION_S", "15.0")),
+                        help="Product trial duration in seconds (default: 15.0). Automatically finalizes session and purges GPU memory.")
     parser.add_argument("--kv-reset-frames", type=int, default=600)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
     parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction, default=True)

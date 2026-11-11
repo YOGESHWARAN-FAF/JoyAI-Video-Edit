@@ -651,6 +651,11 @@ class JoyOmniV2VStreamingSession:
                     torch.cuda.synchronize(device)
         self._clear_vae_feature_caches()
         self.pipeline.transformer.reset_inference_kv_cache()
+        self.streaming_cond_embeds = None
+        self.ref_image_latent = None
+        self._pseudo_latent = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     @torch.no_grad()
     def _initialize(self, first_frame: Image.Image) -> None:

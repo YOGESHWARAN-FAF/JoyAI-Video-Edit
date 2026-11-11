@@ -25,6 +25,7 @@ export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$JOYOMNI_CACHE_ROOT/triton}"
 export CUDA_CACHE_PATH="${CUDA_CACHE_PATH:-$JOYOMNI_CACHE_ROOT/nv_compute}"
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH"
 
 export PYTHONUNBUFFERED=1
@@ -37,6 +38,7 @@ export JOYOMNI_SAGE_ATTN="${JOYOMNI_SAGE_ATTN:-0}"
 export JOYOMNI_FA4_ATTN="${JOYOMNI_FA4_ATTN:-1}"
 export JOYOMNI_FP8_FAST_ACCUM="${JOYOMNI_FP8_FAST_ACCUM:-0}"
 export JOYOMNI_LOW_VRAM="${JOYOMNI_LOW_VRAM:-0}"
+export JOYOMNI_TRIAL_DURATION_S="${JOYOMNI_TRIAL_DURATION_S:-15}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-qwen}"
@@ -72,6 +74,7 @@ python xvideo/serving/serve_joyomni_streaming.py \
   --postprocess-device "$DEVICE" \
   --width "${JOYOMNI_WIDTH:-840}" --height "${JOYOMNI_HEIGHT:-480}" \
   --fps "${JOYOMNI_FPS:-24}" \
+  --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-15}" \
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
   --host "$HOST" --port "$PORT" \
   "$@"
