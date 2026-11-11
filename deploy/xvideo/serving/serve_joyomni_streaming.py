@@ -115,7 +115,14 @@ class _H264Stream:
 
     @staticmethod
     def crf_for_quality(quality: int) -> int:
-        return max(15, min(30, round((35 - int(quality) / 4) / 5) * 5))
+        q = max(10, min(100, int(quality)))
+        if q >= 90:
+            return 18
+        elif q >= 75:
+            return 20
+        elif q >= 60:
+            return 22
+        return 24
 
     def set_quality(self, quality: int) -> None:
         self._want_crf = self.crf_for_quality(quality)
@@ -1077,7 +1084,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                       "subject_count": None, "cand": None, "cand_n": 0, "recount": False}
         kv_reset_frames = max(0, int(args.kv_reset_frames or 0))
 
-        output_quality = 60 if args.output_quality == "auto" else int(args.output_quality)
+        output_quality = 90 if args.output_quality == "auto" else int(args.output_quality)
         output_codec = "mjpeg"
         h264_stream: _H264Stream | None = None
         h264_ingest: _H264Ingest | None = None
@@ -1186,7 +1193,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                     _drop = True
                     if h264_stream is not None and not flow.get("clamped"):
                         flow["clamped"] = True
-                        h264_stream.set_quality(min(int(output_quality), 20))
+                        h264_stream.set_quality(min(int(output_quality), 65))
                 if not _drop and flow.get("probe", 0) > 0:
                     if _adj > max(2, count // 2):
                         _drop = True
@@ -1962,7 +1969,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                 app.state.runtime.output_quality = output_quality
                             if h264_stream is not None:
                                 if flow.get("clamped"):
-                                    h264_stream.set_quality(min(int(output_quality), 20))
+                                    h264_stream.set_quality(min(int(output_quality), 65))
                                 else:
                                     h264_stream.set_quality(output_quality)
                         except (TypeError, ValueError):

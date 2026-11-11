@@ -202,7 +202,7 @@ class JoyOmniRuntime:
         self.pseudo_encode_vae = pseudo_encode_vae or self.decode_vae
         self.postprocess_device = postprocess_device or _module_device(self.pseudo_encode_vae)
         self.dit_lock = threading.Lock()
-        self.output_quality = 60
+        self.output_quality = 90
         self.lossless_output = False
         self.graph_runners: dict[tuple, StreamingGraphRunner] = {}
         self.graph_capture_failures: dict[tuple, int] = {}
@@ -1804,16 +1804,35 @@ class JoyOmniV2VStreamingSession:
         post_device = self.postprocess_device
 
         chunk_decoded = decoded_pixels.to(device=post_device, dtype=torch.float32)
-        frames_u8 = (
-            (chunk_decoded / 2 + 0.5)
-            .clamp(0, 1)
-            .mul_(255.0)
-            .round_()
-            .clamp_(0, 255)
-            .to(torch.uint8)[0]
-            .permute(1, 2, 3, 0)
-            .contiguous()
-        )
+        norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
+
+        # Contrast-Adaptive Edge Sharpening (CAS / Unsharp Mask) to counteract VAE low-pass blur
+        # Brings back crisp facial features, hair, eyes, and garment textures
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.35"))
+        if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
+            import torch.nn.functional as F
+            b, c, t, h, w = norm_pixels.shape
+            reshaped = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
+            blurred = F.avg_pool2d(reshaped, kernel_size=3, stride=1, padding=1)
+            sharpened = torch.clamp(reshaped + sharpness_alpha * (reshaped - blurred), 0.0, 1.0)
+            frames_u8 = (
+                sharpened.mul(255.0)
+                .round_()
+                .clamp_(0, 255)
+                .to(torch.uint8)
+                .reshape(b, t, c, h, w)[0]
+                .permute(0, 2, 3, 1)
+                .contiguous()
+            )
+        else:
+            frames_u8 = (
+                norm_pixels.mul_(255.0)
+                .round_()
+                .clamp_(0, 255)
+                .to(torch.uint8)[0]
+                .permute(1, 2, 3, 0)
+                .contiguous()
+            )
         if self.runtime.lossless_output or self.settings.output_codec == "h264":
             return list(frames_u8.cpu().numpy())
 

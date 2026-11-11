@@ -37,7 +37,7 @@
     .src-controls { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 14px; background: #0f172a; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 24px rgba(0,0,0,0.45); }
     .media-box img:not([src]) { visibility: hidden; }
-    video, canvas, img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; transition: object-fit 0.2s ease; }
+    video, canvas, img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; transition: object-fit 0.2s ease; }
     .media-box.fit-contain video, .media-box.fit-contain canvas, .media-box.fit-contain img { object-fit: contain; }
     .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: #cfcfca; }
     .overlay .hint { font-size: 13px; color: #9a9a95; max-width: 320px; line-height: 1.5; text-wrap: balance; }
@@ -588,7 +588,7 @@ const SERVER_DEFAULTS = __SERVER_DEFAULTS__;
 const sessionConfig = {
   ...SERVER_DEFAULTS,
   camera_fps: 24,
-  uplink_quality: 0.6,
+  uplink_quality: 0.92,
   smooth_playback: true,
   target_queue_delay_ms: 200,
   max_queue_delay_ms: 300,
@@ -792,7 +792,11 @@ const camera = document.getElementById("camera");
 const capture = document.getElementById("capture");
 const outputImg = document.getElementById("outputImg");
 const outputCanvas = document.getElementById("outputCanvas");
-const outputCanvasCtx = outputCanvas.getContext("2d");
+const outputCanvasCtx = outputCanvas.getContext("2d", { alpha: false, desynchronized: true });
+if (outputCanvasCtx) {
+  outputCanvasCtx.imageSmoothingEnabled = true;
+  outputCanvasCtx.imageSmoothingQuality = "high";
+}
 const stageTimings = document.getElementById("stageTimings");
 const stageTimingsPanel = document.getElementById("stageTimingsDetails") || document.getElementById("stageTimingsPanel");
 const peResultEl = document.getElementById("peResult");
@@ -1354,6 +1358,10 @@ function displayOutputFrame(item) {
     if (outputCanvas.width !== item.bmp.width || outputCanvas.height !== item.bmp.height) {
       outputCanvas.width = item.bmp.width;
       outputCanvas.height = item.bmp.height;
+      if (outputCanvasCtx) {
+        outputCanvasCtx.imageSmoothingEnabled = true;
+        outputCanvasCtx.imageSmoothingQuality = "high";
+      }
     }
     outputCanvasCtx.drawImage(item.bmp, 0, 0);
     item.bmp.close();
@@ -1514,13 +1522,13 @@ let upSeq = 0;
 const upPendingByTs = new Map();
 
 function effectiveUpQuality() {
-  if (upAuto) return upAutoHigh ? 0.6 : 0.4;
-  return sessionConfig.uplink_quality;
+  if (upAuto) return upAutoHigh ? 0.92 : 0.82;
+  return sessionConfig.uplink_quality || 0.92;
 }
 
 function upEncoderBitrate(width, height) {
   const REF_PX = 1248 * 720;
-  const REF_BITRATE = effectiveUpQuality() * 4000000;
+  const REF_BITRATE = Math.max(0.7, effectiveUpQuality()) * 6000000;
   const REF_FPS = 16;
   return Math.round(REF_BITRATE * (width * height / REF_PX) * Math.sqrt(sendTargetFps() / REF_FPS));
 }
@@ -3083,7 +3091,7 @@ for (const b of upqTierEl.querySelectorAll("button")) {
     updateMetrics();
   });
 }
-const Q_TIERS = [20, 40, 60];
+const Q_TIERS = [60, 80, 92];
 const downQualityUi = document.getElementById("downQualityUi");
 const qtierEl = document.getElementById("qtier");
 let autoQTier = 2;
