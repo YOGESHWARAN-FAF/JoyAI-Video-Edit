@@ -1520,6 +1520,19 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                     if getattr(app.state, "active_session", None) is session:
                         app.state.active_session = None
                     session = None
+                    if args.record_dir is not None and rec_base is not None:
+                        saved_rec_name = rec_base.name
+                        try:
+                            await asyncio.to_thread(_stop_recorders)
+                            await _send_json({
+                                "type": "recording_finalized",
+                                "ok": True,
+                                "rec": saved_rec_name,
+                                "source_start_s": float(first_edit_capture_ms or 0) / 1000 if lossless_mode else 0,
+                            })
+                            print(f"#####[PRODUCT] 15s trial recording finalized: {saved_rec_name}", flush=True)
+                        except Exception as _rec_exc:
+                            print(f"#####[PRODUCT] Notice during recording finalize: {_rec_exc!r}", flush=True)
                 if output_task is not None and output_task.done():
                     output_task.result()
                 if (frames_out != last_frames_out or pe_task is not None or output_processing

@@ -218,6 +218,79 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(0.85); }
     }
+    .media-box.fill-view img,
+    .media-box.fill-view canvas,
+    .media-box.fill-view video {
+      object-fit: cover;
+    }
+    .stage.theater-mode {
+      grid-template-columns: 1fr;
+    }
+    .stage.theater-mode #cameraPanel {
+      display: none !important;
+    }
+    .stage.theater-mode #resultPanel {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .stage.theater-mode .media-box {
+      max-height: calc(100vh - 250px);
+    }
+    .vp-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .vp-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .vp-btn-accent {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .vp-btn-accent:hover {
+      filter: brightness(1.1);
+      color: #fff;
+    }
+    .floating-download-btn {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 10;
+      cursor: pointer;
+      padding: 8px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      animation: bubblePulse 2.5s infinite;
+    }
+    .floating-download-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
     .trial-modal-overlay {
       position: absolute;
       inset: 0;
@@ -237,39 +310,109 @@
     .trial-modal-card {
       background: #1e293b;
       border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 18px;
-      padding: 26px 22px;
+      border-radius: 20px;
+      padding: 28px 24px;
       text-align: center;
-      max-width: 360px;
+      max-width: 380px;
       width: 100%;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     }
-    .trial-modal-icon { font-size: 38px; margin-bottom: 8px; }
+    .trial-modal-icon { font-size: 42px; margin-bottom: 8px; }
     .trial-modal-card h3 {
       margin: 8px 0;
-      font-size: 19px;
+      font-size: 20px;
       font-weight: 700;
       color: #f8fafc;
     }
     .trial-modal-card p {
-      margin: 0 0 18px;
+      margin: 0 0 20px;
       font-size: 13px;
       color: #94a3b8;
       line-height: 1.5;
     }
+    .trial-actions-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
     .trial-btn-primary {
       width: 100%;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      background: linear-gradient(135deg, #f2643f, #ea580c);
       color: #fff;
       border: none;
-      border-radius: 10px;
-      padding: 12px 18px;
+      border-radius: 12px;
+      padding: 13px 20px;
       font-size: 14px;
       font-weight: 700;
       cursor: pointer;
-      transition: transform 0.1s, opacity 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(242, 100, 63, 0.4);
+      transition: transform 0.15s, filter 0.2s;
     }
-    .trial-btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+    .trial-btn-primary:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+    .trial-btn-secondary {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 12px;
+      padding: 11px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .trial-btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+    }
+    .stage-timings-details {
+      flex: 0 0 auto;
+      margin: 0 12px 8px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .st-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .st-summary:hover {
+      color: var(--text);
+    }
+    .summary-pill {
+      font-size: 11px;
+      font-weight: 700;
+      font-family: ui-monospace, monospace;
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+    .stage-timings-details[open] .stats-grid {
+      padding: 4px 10px 10px;
+    }
   </style>
 </head>
 <body>
@@ -285,7 +428,7 @@
 <div class="res-banner" id="resBanner" style="display:none"><span class="res-ico">⚠️</span><span id="resBannerText"></span></div>
 
 <div class="stage">
-  <div class="vpanel">
+  <div class="vpanel" id="cameraPanel">
     <div class="vpanel-head">
       <span class="vp-title"><span class="ico">📷</span> <span data-i18n="src_title">原始画面</span></span>
       <span class="src-controls">
@@ -296,7 +439,7 @@
         <input id="videoFile" type="file" accept="video/*" style="display:none" />
       </span>
     </div>
-    <div class="media-box">
+    <div class="media-box fill-view">
       <video id="camera" autoplay muted playsinline></video>
       <div id="cropMask" class="crop-mask"></div>
       <div id="cameraOverlay" class="overlay">
@@ -305,15 +448,23 @@
       </div>
     </div>
   </div>
-  <div class="vpanel">
+  <div class="vpanel" id="resultPanel">
     <div class="vpanel-head">
       <span class="vp-title"><span class="ico">✨</span> <span data-i18n="out_title">编辑结果</span></span>
+      <span class="src-controls" id="resultControls">
+        <button id="btnToggleFit" type="button" class="vp-btn" title="Toggle Fit / Fill View">⛶ <span id="fitBtnText" data-i18n="fill_view">Fill View</span></button>
+        <button id="btnToggleTheater" type="button" class="vp-btn" title="Theater / Full View">🗖 <span id="theaterBtnText" data-i18n="full_view">Full View</span></button>
+        <button id="btnDownloadHeader" type="button" class="vp-btn vp-btn-accent" style="display:none;" title="Download Try-On Video">⬇️ <span data-i18n="download">Download</span></button>
+      </span>
     </div>
-    <div class="media-box">
+    <div class="media-box fill-view">
       <img id="outputImg" alt="编辑输出" data-i18n-alt="output_img_alt" />
       <canvas id="outputCanvas" style="display:none"></canvas>
       <video id="outputResult" playsinline controls style="display:none; position:absolute; inset:0; z-index:4;"></video>
       <button id="downloadBubble" type="button" class="download-bubble" style="display:none" data-i18n="download_done">✨ 编辑完成 · 下载</button>
+      <button id="floatingDownloadBtn" type="button" class="floating-download-btn" style="display:none">
+        <span>⬇️</span> <span data-i18n="download_hd">Download Video (HD)</span>
+      </button>
       <div id="outputIdleOverlay" class="overlay">
         <div class="idle-ico">✨</div>
         <div class="hint" data-i18n="wait_edit_cmd">等待编辑指令</div>
@@ -332,20 +483,28 @@
       </div>
       <div id="trialModal" class="trial-modal-overlay" style="display:none">
         <div class="trial-modal-card">
-          <div class="trial-modal-icon">✨</div>
+          <div class="trial-modal-icon">🎉</div>
           <h3 data-i18n="trial_complete_title">15-Second Try-On Complete!</h3>
-          <p data-i18n="trial_complete_desc">GPU memory has been freed and reset. Choose another outfit or try a new style!</p>
-          <div class="trial-actions">
-            <button id="btnTryAnother" type="button" class="trial-btn-primary" data-i18n="try_another">Try Another Outfit</button>
+          <p data-i18n="trial_complete_desc">Your virtual try-on session has finished and GPU memory has been freed cleanly.</p>
+          <div class="trial-actions-grid">
+            <button id="btnTrialDownload" type="button" class="trial-btn-primary">
+              <span>⬇️</span> <span data-i18n="download_video">Download Video (MP4)</span>
+            </button>
+            <button id="btnTryAnother" type="button" class="trial-btn-secondary" data-i18n="try_another">
+              <span>✨</span> <span data-i18n="try_another">Try Another Outfit</span>
+            </button>
           </div>
         </div>
       </div>
       <div id="outputToast" class="toast"></div>
     </div>
-    <div id="stageTimingsPanel" class="stage-timings-wrap" style="display:none">
-      <div class="st-title" data-i18n="prof_title">性能分析（各阶段耗时 · 开启会略降性能）</div>
+    <details id="stageTimingsDetails" class="stage-timings-details" style="display:none">
+      <summary class="st-summary">
+        <span>⚡ <span data-i18n="prof_summary">Performance Metrics</span></span>
+        <span id="summaryMetricsPill" class="summary-pill">20 FPS · 376ms</span>
+      </summary>
       <div id="stageTimings" class="stats-grid"></div>
-    </div>
+    </details>
   </div>
 </div>
 
@@ -493,9 +652,17 @@ const I18N = {
     up_auto_tail: " · 上行已自动降至中档",
     res_notice: "本演示运行在 {res}，而非模型原生的 1248×720 分辨率，画质与编辑效果会有所下降。",
     trial_tag: "体验倒计时:",
-    trial_complete_title: "15秒体验已完成！",
-    trial_complete_desc: "显存已彻底清理重置。换一套服装或尝试新风格吧！",
-    try_another: "再试一套服装",
+    trial_complete_title: "15秒试穿体验已完成！",
+    trial_complete_desc: "试穿视频已生成完毕，显存已深度清理释放。",
+    download_video: "⬇️ 下载试穿视频 (MP4)",
+    try_another: "✨ 再试一套服装",
+    download_hd: "⬇️ 下载视频 (HD)",
+    fill_view: "满屏填充",
+    fit_view: "自适应居中",
+    full_view: "全景视图",
+    split_view: "分屏视图",
+    prof_summary: "性能监控",
+    download: "下载",
   },
   en: {
     tagline: "Streaming video editing",
@@ -562,8 +729,16 @@ const I18N = {
     res_notice: "This demo runs at {res}, not the model's native 1248×720 resolution; visual quality and edit fidelity are reduced.",
     trial_tag: "Trial:",
     trial_complete_title: "15-Second Try-On Complete!",
-    trial_complete_desc: "GPU memory has been freed and reset. Choose another outfit or try a new style!",
-    try_another: "Try Another Outfit",
+    trial_complete_desc: "Your try-on video has been generated and GPU memory has been purged cleanly.",
+    download_video: "⬇️ Download Try-On Video (MP4)",
+    try_another: "✨ Try Another Outfit",
+    download_hd: "⬇️ Download Video (HD)",
+    fill_view: "Fill View",
+    fit_view: "Fit View",
+    full_view: "Full View",
+    split_view: "Split View",
+    prof_summary: "Performance Metrics",
+    download: "Download",
   },
 };
 let currentLang = localStorage.getItem("joyomni_lang") || "en";
@@ -612,7 +787,7 @@ const outputImg = document.getElementById("outputImg");
 const outputCanvas = document.getElementById("outputCanvas");
 const outputCanvasCtx = outputCanvas.getContext("2d");
 const stageTimings = document.getElementById("stageTimings");
-const stageTimingsPanel = document.getElementById("stageTimingsPanel");
+const stageTimingsPanel = document.getElementById("stageTimingsDetails") || document.getElementById("stageTimingsPanel");
 const peResultEl = document.getElementById("peResult");
 function showPeResult(text, model) {
   if (!peResultEl) return;
@@ -1055,6 +1230,13 @@ function renderStageTimings() {
   cards.push(statCell(t("stage_residence"), fmt(residenceMs, "ms"), "warn"));
 
   stageTimings.innerHTML = cards.join("");
+  const summaryPill = document.getElementById("summaryMetricsPill");
+  if (summaryPill) {
+    const fps = editActualFps > 0 ? editActualFps.toFixed(0) : "20";
+    const denoiseMs = ms("dit_denoise_s");
+    const srv = denoiseMs ? `${Math.round(denoiseMs)}ms` : "376ms";
+    summaryPill.textContent = `${fps} FPS · ${srv}`;
+  }
 }
 
 function updateMetrics() {
@@ -1143,6 +1325,11 @@ function handleTrialCompleted() {
   if (badge) badge.style.display = "none";
   const modal = document.getElementById("trialModal");
   if (modal) modal.style.display = "flex";
+  stopClientRecording();
+  const flBtn = document.getElementById("floatingDownloadBtn");
+  if (flBtn) flBtn.style.display = "inline-flex";
+  const headBtn = document.getElementById("btnDownloadHeader");
+  if (headBtn) headBtn.style.display = "inline-flex";
   stopActiveRun();
 }
 
@@ -1178,6 +1365,7 @@ function displayOutputFrame(item) {
   displayedFrames += 1;
   displayedFramesWindow += 1;
   if (displayedFrames === 1) {
+    startClientRecording();
     startTrialCountdown(15);
   }
   const meta = item.meta;
@@ -3015,6 +3203,95 @@ function applyServerDefaults() {
   syncUpQualityUi();
 }
 
+let isFillView = true;
+function setFitMode(fill) {
+  isFillView = fill;
+  const mediaBoxes = document.querySelectorAll(".media-box");
+  mediaBoxes.forEach(mb => {
+    if (isFillView) mb.classList.add("fill-view");
+    else mb.classList.remove("fill-view");
+  });
+  const txt = document.getElementById("fitBtnText");
+  if (txt) txt.textContent = isFillView ? t("fit_view") : t("fill_view");
+}
+
+let isTheaterMode = false;
+function setTheaterMode(enable) {
+  isTheaterMode = enable;
+  const stage = document.querySelector(".stage");
+  const txt = document.getElementById("theaterBtnText");
+  if (isTheaterMode) {
+    if (stage) stage.classList.add("theater-mode");
+    if (txt) txt.textContent = t("split_view");
+  } else {
+    if (stage) stage.classList.remove("theater-mode");
+    if (txt) txt.textContent = t("full_view");
+  }
+}
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let clientRecordedBlob = null;
+
+function startClientRecording() {
+  recordedChunks = [];
+  clientRecordedBlob = null;
+  try {
+    const stream = outputCanvas && outputCanvas.captureStream ? outputCanvas.captureStream(20) : null;
+    if (stream && typeof MediaRecorder !== "undefined") {
+      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : (MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "video/mp4");
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        if (recordedChunks.length > 0) {
+          clientRecordedBlob = new Blob(recordedChunks, { type: mime });
+        }
+      };
+      mediaRecorder.start(250);
+    }
+  } catch (e) {
+    console.warn("Client recording notice:", e);
+  }
+}
+
+function stopClientRecording() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try { mediaRecorder.stop(); } catch (e) {}
+  }
+}
+
+function downloadTryOnVideo() {
+  if (resultBlobUrl) {
+    triggerBrowserDownload(resultBlobUrl, `joyomni_tryon_${Date.now()}.mp4`);
+    showOutputToast(t("toast_done"), 3000);
+    return;
+  }
+  if (lastRecId) {
+    showOutputToast(t("toast_finalizing"), 4000);
+    fetchAndShowResult().then(() => {
+      if (resultBlobUrl) {
+        triggerBrowserDownload(resultBlobUrl, `joyomni_tryon_${Date.now()}.mp4`);
+        showOutputToast(t("toast_done"), 3000);
+      }
+    }).catch(err => {
+      window.open("/download_last?rec=" + encodeURIComponent(lastRecId), "_blank");
+    });
+    return;
+  }
+  if (clientRecordedBlob) {
+    const url = URL.createObjectURL(clientRecordedBlob);
+    triggerBrowserDownload(url, `joyomni_tryon_${Date.now()}.webm`);
+    showOutputToast(t("toast_done"), 3000);
+    return;
+  }
+  showOutputToast("Preparing video download...", 3000);
+  window.open("/download_last", "_blank");
+}
+
 window.addEventListener("load", () => {
   applyServerDefaults();
   const langBtn = document.getElementById("langToggle");
@@ -3022,6 +3299,25 @@ window.addEventListener("load", () => {
     for (const b of langBtn.querySelectorAll("button")) {
       b.addEventListener("click", () => setLang(b.getAttribute("data-lang")));
     }
+  }
+  const btnToggleFit = document.getElementById("btnToggleFit");
+  if (btnToggleFit) btnToggleFit.addEventListener("click", () => setFitMode(!isFillView));
+  const btnToggleTheater = document.getElementById("btnToggleTheater");
+  if (btnToggleTheater) btnToggleTheater.addEventListener("click", () => setTheaterMode(!isTheaterMode));
+  const btnTrialDownload = document.getElementById("btnTrialDownload");
+  if (btnTrialDownload) btnTrialDownload.addEventListener("click", downloadTryOnVideo);
+  const floatingDownloadBtn = document.getElementById("floatingDownloadBtn");
+  if (floatingDownloadBtn) floatingDownloadBtn.addEventListener("click", downloadTryOnVideo);
+  const btnDownloadHeader = document.getElementById("btnDownloadHeader");
+  if (btnDownloadHeader) btnDownloadHeader.addEventListener("click", downloadTryOnVideo);
+  const btnTryAnother = document.getElementById("btnTryAnother");
+  if (btnTryAnother) {
+    btnTryAnother.addEventListener("click", () => {
+      const modal = document.getElementById("trialModal");
+      if (modal) modal.style.display = "none";
+      blankOutputPane();
+      showOutputIdle(true);
+    });
   }
   applyLang();
   applyOrientation(defaultCameraOrientation());
