@@ -35,9 +35,10 @@
     .vpanel-head .vp-title { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 720; }
     .vpanel-head .vp-title .ico { font-size: 14px; color: var(--accent); }
     .src-controls { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-    .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 12px; background: var(--media-bg); }
+    .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 14px; background: #0f172a; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 24px rgba(0,0,0,0.45); }
     .media-box img:not([src]) { visibility: hidden; }
-    video, canvas, img { width: 100%; height: 100%; display: block; object-fit: contain; background: var(--media-bg); }
+    video, canvas, img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; transition: object-fit 0.2s ease; }
+    .media-box.fit-contain video, .media-box.fit-contain canvas, .media-box.fit-contain img { object-fit: contain; }
     .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: #cfcfca; }
     .overlay .hint { font-size: 13px; color: #9a9a95; max-width: 320px; line-height: 1.5; text-wrap: balance; }
     .overlay .idle-ico { font-size: 30px; color: #6f6f6a; }
@@ -225,17 +226,23 @@
     }
     .stage.theater-mode {
       grid-template-columns: 1fr;
+      max-width: 1180px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 4px 16px 10px;
     }
     .stage.theater-mode #cameraPanel {
       display: none !important;
     }
     .stage.theater-mode #resultPanel {
       width: 100%;
-      max-width: 1200px;
       margin: 0 auto;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
     }
     .stage.theater-mode .media-box {
-      max-height: calc(100vh - 250px);
+      min-height: 520px;
+      max-height: calc(100vh - 220px);
     }
     .vp-btn {
       display: inline-flex;
@@ -1156,9 +1163,8 @@ function sendTargetFps() {
 }
 
 function outputPlaybackFps() {
-  const configured = sendTargetFps();
-  const measured = cameraMeasuredFps > 0.5 ? cameraMeasuredFps : (cameraTrackFps || configured);
-  return Math.max(1, Math.min(configured, measured || configured));
+  // Decoupled from camera sensor rate to ensure full configured GPU server stream rate (20-24 FPS)
+  return sendTargetFps();
 }
 
 function outputQueueLimitFrames() {
@@ -1384,22 +1390,22 @@ function effectivePlaybackIntervalMs() {
   const base = Math.max(16, Math.round(1000 / fps));
   const q = outputFrameQueue.length;
   // Dynamic queue-depth pacing:
-  // Target depth is 3-4 frames (~120-160ms buffer).
-  // If queue has 5 or more frames, play slightly faster (~35ms @ 24fps) to smoothly drain without dropping.
-  if (q >= 5) return Math.max(16, Math.round(base * 0.85));
-  // If queue has only 1 frame left, stretch slightly (~48ms @ 24fps) to bridge smoothly to the next chunk arrival.
+  // Target depth is 4-8 frames (~200-400ms buffer).
+  // If queue has 8 or more frames (fresh 8-frame chunk arrived), play slightly faster (~40ms @ 20fps) to smoothly drain without dropping.
+  if (q >= 8) return Math.max(16, Math.round(base * 0.80));
+  // If queue has only 1 frame left, stretch slightly (~57ms @ 20fps) to bridge smoothly to the next chunk arrival.
   if (q <= 1) return Math.round(base * 1.15);
-  // Nominal interval (~42ms @ 24fps).
+  // Nominal interval (~50ms @ 20fps, ~42ms @ 24fps).
   return base;
 }
 
 function pumpOutputFrame() {
   if (!smoothPlaybackEnabled()) return;
 
-  // Latency clamp: If queue ever builds up beyond 8 frames (e.g. after a network stall),
-  // drop oldest frames down to 4 so latency stays snappy (<350ms).
-  if (outputFrameQueue.length > 8) {
-    while (outputFrameQueue.length > 4) {
+  // Emergency clamp: Never drop frames during normal 8-frame chunk cycles!
+  // Only drop if network stalled and queue backed up beyond 24 frames (> 3 server chunks).
+  if (outputFrameQueue.length > 24) {
+    while (outputFrameQueue.length > 12) {
       const dropped = outputFrameQueue.shift();
       disposeItem(dropped);
       outputQueueDroppedFrames += 1;
@@ -3208,8 +3214,13 @@ function setFitMode(fill) {
   isFillView = fill;
   const mediaBoxes = document.querySelectorAll(".media-box");
   mediaBoxes.forEach(mb => {
-    if (isFillView) mb.classList.add("fill-view");
-    else mb.classList.remove("fill-view");
+    if (isFillView) {
+      mb.classList.remove("fit-contain");
+      mb.classList.add("fill-view");
+    } else {
+      mb.classList.add("fit-contain");
+      mb.classList.remove("fill-view");
+    }
   });
   const txt = document.getElementById("fitBtnText");
   if (txt) txt.textContent = isFillView ? t("fit_view") : t("fill_view");
@@ -3237,12 +3248,16 @@ function startClientRecording() {
   recordedChunks = [];
   clientRecordedBlob = null;
   try {
-    const stream = outputCanvas && outputCanvas.captureStream ? outputCanvas.captureStream(20) : null;
+    const targetFps = sendTargetFps() || 20;
+    const stream = outputCanvas && outputCanvas.captureStream ? outputCanvas.captureStream(targetFps) : null;
     if (stream && typeof MediaRecorder !== "undefined") {
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
         ? "video/webm;codecs=vp9"
         : (MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "video/mp4");
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 6000000,
+      });
       mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) recordedChunks.push(e.data);
       };

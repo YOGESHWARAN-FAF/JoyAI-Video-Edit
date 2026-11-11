@@ -861,7 +861,14 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             "record_enabled": args.record_dir is not None,
         }
         html = _load_index_html().replace("__SERVER_DEFAULTS__", json.dumps(server_defaults))
-        return HTMLResponse(html)
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     @app.get("/health")
     def health() -> JSONResponse:
