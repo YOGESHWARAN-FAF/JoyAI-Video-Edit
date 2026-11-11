@@ -970,7 +970,7 @@ function targetOutputQueueDelayMs() {
 function maxOutputQueueDelayMs() {
   return sessionConfig.max_queue_delay_ms;
 }
-const MAX_BACKEND_PENDING_FRAMES = 12;
+const MAX_BACKEND_PENDING_FRAMES = 36;
 let sendRealtimeSkips = 0;
 let sentFrames = 0;
 let backendAckedFrames = 0;
@@ -1398,12 +1398,12 @@ function effectivePlaybackIntervalMs() {
   const base = Math.max(16, Math.round(1000 / fps));
   const q = outputFrameQueue.length;
   // Dynamic queue-depth pacing:
-  // Target depth is 4-8 frames (~200-400ms buffer).
-  // If queue has 8 or more frames (fresh 8-frame chunk arrived), play slightly faster (~40ms @ 20fps) to smoothly drain without dropping.
-  if (q >= 8) return Math.max(16, Math.round(base * 0.80));
-  // If queue has only 1 frame left, stretch slightly (~57ms @ 20fps) to bridge smoothly to the next chunk arrival.
-  if (q <= 1) return Math.round(base * 1.15);
-  // Nominal interval (~50ms @ 20fps, ~42ms @ 24fps).
+  // Target depth is 6-10 frames (~300-500ms buffer).
+  // If queue has built up significantly (>= 14 frames / > 1.5 chunks), drain gently (~45ms @ 20fps)
+  if (q >= 14) return Math.max(16, Math.round(base * 0.90));
+  // If buffer is critically low (<= 2 frames), stretch gently (~55ms @ 20fps) to avoid underrun
+  if (q <= 2) return Math.round(base * 1.10);
+  // Nominal interval (~50ms @ 20fps, ~42ms @ 24fps) - steady continuous presentation!
   return base;
 }
 

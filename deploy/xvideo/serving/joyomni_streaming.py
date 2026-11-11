@@ -1611,6 +1611,7 @@ class JoyOmniV2VStreamingSession:
                         decoded.decoded_pixels,
                         profile=decoded.job.profile,
                         chunk_idx=decoded.job.chunk_idx,
+                        source_frames=decoded.job.source_frames,
                     )
 
                 n_out = len(packed)
@@ -1800,11 +1801,33 @@ class JoyOmniV2VStreamingSession:
         *,
         profile: dict[str, Any] | None = None,
         chunk_idx: int,
+        source_frames: list[Image.Image] | None = None,
     ) -> list[bytes]:
         post_device = self.postprocess_device
 
         chunk_decoded = decoded_pixels.to(device=post_device, dtype=torch.float32)
         norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
+
+        # High-Fidelity Background & Detail Preservation (Decart-grade photorealism)
+        # Keeps walls, room, and untouched areas 100% photorealistic from the real camera feed
+        preserve_bg = os.environ.get("JOYOMNI_PRESERVE_BACKGROUND", "1") == "1"
+        if preserve_bg and source_frames is not None and len(source_frames) > 0:
+            try:
+                src_tensor = self._frames_to_tensor(source_frames).to(device=post_device, dtype=torch.float32)
+                if src_tensor.shape == chunk_decoded.shape:
+                    src_norm = (src_tensor / 2.0 + 0.5).clamp(0.0, 1.0)
+                    import torch.nn.functional as F
+                    diff = torch.abs(norm_pixels - src_norm).mean(dim=1, keepdim=True)
+                    b, c, t, h, w = diff.shape
+                    diff_flat = diff.permute(0, 2, 1, 3, 4).reshape(b * t, 1, h, w)
+                    diff_smooth = F.avg_pool2d(diff_flat, kernel_size=9, stride=1, padding=4)
+                    diff_mask = diff_smooth.reshape(b, t, 1, h, w).permute(0, 2, 1, 3, 4)
+                    threshold_low = float(os.environ.get("JOYOMNI_BG_THRESH_LOW", "0.06"))
+                    threshold_high = float(os.environ.get("JOYOMNI_BG_THRESH_HIGH", "0.14"))
+                    alpha_mask = torch.clamp((diff_mask - threshold_low) / max(1e-4, threshold_high - threshold_low), 0.0, 1.0)
+                    norm_pixels = alpha_mask * norm_pixels + (1.0 - alpha_mask) * src_norm
+            except Exception as _bg_exc:
+                print(f"#####[STREAM] Notice in bg preservation: {_bg_exc!r}", flush=True)
 
         # Contrast-Adaptive Edge Sharpening (CAS / Unsharp Mask) to counteract VAE low-pass blur
         # Brings back crisp facial features, hair, eyes, and garment textures
