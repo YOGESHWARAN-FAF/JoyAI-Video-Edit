@@ -530,7 +530,7 @@
   <div class="cmd-foot minimal">
     <label id="peToggle" class="pe-toggle keep-min"><input id="usePe" type="checkbox" checked style="width:auto" /> <span data-i18n="pe_toggle">提示词增强</span></label>
     <label id="gateToggle" class="pe-toggle keep-min"><input id="faceDetection" type="checkbox" checked style="width:auto" /> <span data-i18n="face_detection">人脸检测</span></label>
-    <label class="pe-toggle keep-min"><input id="fullBodyDetection" type="checkbox" style="width:auto" /> <span data-i18n="full_body_detection">全身检测</span></label>
+    <label class="pe-toggle keep-min"><input id="fullBodyDetection" type="checkbox" style="width:auto" /> <span data-i18n="full_body_detection">全身/半身检测</span></label>
     <label id="profToggle" class="pe-toggle keep-min"><input id="profileTimings" type="checkbox" style="width:auto" /> <span data-i18n="prof_toggle">性能分析</span></label>
     <label id="smoothToggle" class="pe-toggle keep-min"><input id="smoothPlayback" type="checkbox" checked style="width:auto" /> <span data-i18n="smooth_toggle">平滑播放</span></label>
     <span class="kvreset-field keep-min">
@@ -606,10 +606,10 @@ const I18N = {
     fps_label: "发/收/显",
     pe_toggle: "提示词增强",
     face_detection: "人脸检测",
-    full_body_detection: "全身检测",
+    full_body_detection: "全身/半身检测",
     gate_face_unavailable: "面部检测暂不可用，请关闭检测或检查服务",
-    gate_full_body: "请让头部和双脚完整入镜，然后站稳",
-    gate_full_body_unavailable: "全身检测暂不可用，请关闭该开关或检查服务",
+    gate_full_body: "请让半身或全身入镜，然后站稳",
+    gate_full_body_unavailable: "身体检测暂不可用，请关闭该开关或检查服务",
     prof_toggle: "性能分析",
     smooth_toggle: "平滑播放",
     upload_quality: "上传清晰度",
@@ -682,10 +682,10 @@ const I18N = {
     fps_label: "out/in/disp",
     pe_toggle: "Prompt Enhance",
     face_detection: "Face detection",
-    full_body_detection: "Full-body detection",
+    full_body_detection: "Full / Half Body",
     gate_face_unavailable: "Face detection unavailable; disable detection or check the server",
-    gate_full_body: "Show your head and feet, then hold still",
-    gate_full_body_unavailable: "Full-body detection unavailable; disable this option or check the server",
+    gate_full_body: "Show your upper body or full body, then hold still",
+    gate_full_body_unavailable: "Body detection unavailable; disable this option or check the server",
     prof_toggle: "Profiling",
     smooth_toggle: "Smooth Play",
     upload_quality: "Upload quality",

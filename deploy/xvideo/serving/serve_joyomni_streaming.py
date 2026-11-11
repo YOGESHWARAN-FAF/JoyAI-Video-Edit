@@ -439,17 +439,53 @@ def _person_present(image: Image.Image, *, onnx_path: str, conf: float) -> bool:
     return float(out[0, 4, :].max()) >= float(conf)
 
 def _full_body_box_ready(box, face_center, image_width, image_height):
-    """Check person/face framing; does not verify foot visibility."""
+    """Check person/face framing; supports full-body, mid-body (shirt+pants), and half-body poses."""
     x, y, w, h = box
     fx, fy, face_short = face_center
     if w <= 0 or h <= 0 or face_short <= 0:
         return False
-    if x < .01 or y < .01 or x + w > .99 or y + h > .97:
+
+    # Normalized visible bounding box within image boundaries [0.0, 1.0]
+    visible_top = max(0.0, y)
+    visible_bottom = min(1.0, y + h)
+    visible_h = visible_bottom - visible_top
+
+    visible_left = max(0.0, x)
+    visible_right = min(1.0, x + w)
+    visible_w = visible_right - visible_left
+
+    # Person must have reasonable presence in the frame
+    if visible_h < 0.18 or visible_w < 0.12:
         return False
-    visible_h = min(y + h, 1.0) - y
-    if not (x <= fx <= x + w and y <= fy <= y + .3 * visible_h):
+
+    # Discard if person is completely off-screen (near edge clipping is allowed for realistic webcam view)
+    if visible_left >= 0.92 or visible_right <= 0.08:
         return False
-    return visible_h >= .35 and visible_h * image_height >= 6 * face_short * min(image_width, image_height)
+
+    # Face horizontal alignment: face center should belong to the detected person box
+    box_left = visible_left - 0.12
+    box_right = visible_right + 0.12
+    if not (box_left <= fx <= box_right):
+        return False
+
+    # Face vertical alignment: face center must be located in upper portion of the visible person.
+    # Allows up to 58% of visible_h to comfortably support half-body poses (waist up) and seated users.
+    if fy < visible_top - 0.08 or fy > visible_top + 0.58 * visible_h:
+        return False
+
+    # Person height vs face height ratio check:
+    # Reject extreme face-only closeups where no body/garment is visible to edit.
+    # - Full body (head to toe): ~6.5 to 7.5 heads
+    # - Mid body (shirt + half pant): ~3.5 to 5.0 heads
+    # - Half body (full shirt / waist up): ~2.2 to 3.5 heads
+    # - Extreme face closeup: < 1.6 heads
+    # 1.7 * face_pixel_h cleanly separates half-body & mid-body try-on from tight headshots.
+    face_pixel_h = face_short * min(image_width, image_height)
+    visible_pixel_h = visible_h * image_height
+    if visible_pixel_h < 1.7 * face_pixel_h:
+        return False
+
+    return True
 
 
 def _check_full_body_gate(image, *, face_center, onnx_path, conf):
@@ -465,13 +501,19 @@ def _check_full_body_gate(image, *, face_center, onnx_path, conf):
     net.setInput(blob)
     predictions = net.forward()[0]
     boxes, scores = [], []
-    for i in np.flatnonzero(predictions[4] >= conf):
+    conf_thresh = float(conf)
+    matched_indices = np.flatnonzero(predictions[4] >= conf_thresh)
+    # Robust fallback: if slightly below confidence due to motion or room lighting, allow down to 0.28
+    if len(matched_indices) == 0:
+        conf_thresh = max(0.28, conf_thresh - 0.12)
+        matched_indices = np.flatnonzero(predictions[4] >= conf_thresh)
+    for i in matched_indices:
         cx, cy, w, h = (float(v) / 320 for v in predictions[:4, i])
         boxes.append([cx - w / 2, cy - h / 2, w, h])
         scores.append(float(predictions[4, i]))
     if not boxes:
         return "full_body_needed"
-    keep = cv2.dnn.NMSBoxes(boxes, scores, conf, .45)
+    keep = cv2.dnn.NMSBoxes(boxes, scores, conf_thresh, .45)
     for i in np.asarray(keep).reshape(-1):
         if _full_body_box_ready(boxes[int(i)], face_center, image.width, image.height):
             return None
@@ -2348,7 +2390,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--person-count-change-frames", type=int, default=24, help="Consecutive frames a NEW face count must hold before it is accepted. An INCREASE then re-edits (reset chunk0) so people who enter later get edited; a decrease only lowers the baseline. Debounce vs transient miscounts (sway / motion blur / a background face flickering in). Keep this larger than --presence-absent-frames so a brief face loss black-holds instead of faking a 0->1 'new person' re-edit. ~24fps, 24 ≈ 1s.")
     parser.add_argument("--count-face-min-ratio", type=float, default=0.45, help="For person-count-change: a face counts as an additional subject only if its short side is >= this fraction of the MAIN (largest/foreground) face's short side; an absolute floor of 5% of the frame short side also applies. Excludes far-smaller BACKGROUND people (e.g. a coworker behind the subject) that otherwise flip the count and trigger spurious re-edits. Higher = stricter (ignore more background).")
     parser.add_argument("--person-detector-onnx", type=str, default=DEFAULT_PERSON_DETECTOR_ONNX, help="YOLOv8n ONNX (fixed 320 input) for mid-session body presence via cv2.dnn. Missing/unloadable -> the body check passes through (always 'present'); face-present rules still apply, so no_face black-holds can still trigger.")
-    parser.add_argument("--person-gate-conf", type=float, default=0.4, help="Min YOLO person-class score to count the person as present.")
+    parser.add_argument("--person-gate-conf", type=float, default=0.35, help="Min YOLO person-class score to count the person as present.")
     parser.add_argument("--detection-stride", type=int, default=2,
                         help="Shared face/full-body monitoring interval at 24 FPS; scaled with client FPS. Startup and paused recovery inspect every frame.")
     parser.add_argument("--person-body-flip-frames", type=int, default=6, help="Consecutive body-misses before the client reason flips to no_person. Below this, a lone YOLO dip (a hand/object over the face also clips the torso) keeps the current reason -- normally show_full_face -- so the hint doesn't strobe no_face<->no_person. Reason-only de-bounce; the black-hold timing (--presence-absent-frames) is unaffected. ~24fps, 6 ≈ 0.25s. Higher = more reluctant to ever show no_person; 1 = report no_person on the first miss (old behavior).")
