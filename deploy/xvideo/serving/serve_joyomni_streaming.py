@@ -1327,10 +1327,13 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 await _run_work(lambda: session_ref.close(timeout=remaining), timeout=remaining)
             except Exception as exc:
                 ws_debug["close_error"] = repr(exc)
-                app.state.runtime_error = f"Unsafe runtime after {reason}: {exc!r}; restart required"
-                for task in pending_work:
-                    task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
-                raise RuntimeError(app.state.runtime_error) from exc
+                if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+                    print(f"#####[PRODUCT] Notice: session cleanup took longer than {args.session_close_timeout_s}s ({exc!r}); resetting cleanly without bricking server.", flush=True)
+                else:
+                    app.state.runtime_error = f"Unsafe runtime after {reason}: {exc!r}; restart required"
+                    for task in pending_work:
+                        task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+                    raise RuntimeError(app.state.runtime_error) from exc
             finally:
                 try:
                     gc.collect()
@@ -2296,7 +2299,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-init-timeout-s", type=float, default=120.0, help="Timeout for session initialization, with or without a reference image.")
     parser.add_argument("--push-frame-timeout-s", type=float, default=15.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")
     parser.add_argument("--max-inflight-chunks", type=int, default=2, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
-    parser.add_argument("--session-close-timeout-s", type=float, default=5.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
+    parser.add_argument("--session-close-timeout-s", type=float, default=15.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
