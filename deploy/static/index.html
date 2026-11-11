@@ -959,7 +959,7 @@ function targetOutputQueueDelayMs() {
 function maxOutputQueueDelayMs() {
   return sessionConfig.max_queue_delay_ms;
 }
-const MAX_BACKEND_PENDING_FRAMES = 32;
+const MAX_BACKEND_PENDING_FRAMES = 12;
 let sendRealtimeSkips = 0;
 let sentFrames = 0;
 let backendAckedFrames = 0;

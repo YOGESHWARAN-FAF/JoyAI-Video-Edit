@@ -316,11 +316,11 @@ def _sanitize_reference_garment_image(image: Image.Image, onnx_path: str = DEFAU
             w = int(f_w * scale_x)
             h = int(f_h * scale_y)
 
-            # Cover full head, hair and face down to neck
-            top = 0 if y < h_orig * 0.4 else max(0, int(y - 0.7 * h))
-            bottom = min(h_orig, int(y + 1.15 * h))
-            left = max(0, int(x - 0.35 * w))
-            right = min(w_orig, int(x + 1.35 * w))
+            # Cover full head, hair and face down to neck, preserving 100% of dress neckline, collar & shoulders
+            top = 0 if y < h_orig * 0.4 else max(0, int(y - 0.5 * h))
+            bottom = min(h_orig, int(y + 1.02 * h))
+            left = max(0, int(x - 0.15 * w))
+            right = min(w_orig, int(x + 1.15 * w))
 
             center = ((left + right) // 2, (top + bottom) // 2)
             axes = ((right - left) // 2, (bottom - top) // 2)
@@ -1374,7 +1374,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                     if elapsed_trial >= trial_duration_s:
                         trial_completed = True
                         print(
-                            f"#####[PRODUCT] 15s trial limit reached ({elapsed_trial:.2f}s >= {trial_duration_s:.1f}s). Finalizing session.",
+                            f"#####[PRODUCT] {trial_duration_s:.0f}s trial limit reached ({elapsed_trial:.2f}s >= {trial_duration_s:.1f}s). Finalizing session.",
                             flush=True,
                         )
                         async with send_lock:
@@ -1382,7 +1382,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                 "type": "trial_completed",
                                 "duration_s": trial_duration_s,
                                 "elapsed_s": round(elapsed_trial, 2),
-                                "reason": "15-second product trial completed",
+                                "reason": f"{trial_duration_s:.0f}-second product trial completed",
                             })
                         stop_output_pump.set()
                         break
@@ -1434,6 +1434,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                     raise RuntimeError(app.state.runtime_error) from exc
             finally:
                 try:
+                    if app.state.runtime is not None and hasattr(app.state.runtime, "graph_runners"):
+                        app.state.runtime.graph_runners.clear()
                     gc.collect()
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
@@ -1689,9 +1691,22 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             continue
                         if ref_image is not None:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
-                            protect_clause = " Transfer only the clothing, outfit and garment style from the reference image. Keep the subject's face, facial features, facial identity, skin tone, hair, head, and the background completely unchanged and identical to the original."
-                            if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
-                                session_prompt = f"{session_prompt.rstrip('. ')}.{protect_clause}"
+                            clean_raw = raw_session_prompt.strip()
+                            if not clean_raw or clean_raw == args.prompt:
+                                session_prompt = (
+                                    "Change the person's clothes to match the clothing and outfit shown in the reference image. "
+                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, "
+                                    "and fit onto the person's body with high realistic detail. "
+                                    "Keep the subject's face, facial features, facial identity, hair, skin tone, and background unchanged."
+                                )
+                            else:
+                                protect_clause = (
+                                    "Transfer only the clothing, outfit and garment style from the reference image accurately onto the person's body "
+                                    "with realistic fabric detail and fit. Keep the subject's face, facial features, facial identity, "
+                                    "skin tone, hair, head, and the background completely unchanged and identical to the original."
+                                )
+                                if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
+                                    session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
                         kv_reset_frames = max(0, int(payload.get("kv_reset_frames", args.kv_reset_frames)))
                         output_quality = max(1, min(100, int(payload.get("output_quality", output_quality))))
                         lossless_mode = str(payload.get("source", "")) == "file"
@@ -2189,10 +2204,11 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         )
                     try:
                         if not lossless_mode and session_max_inflight and session.inflight_chunks() >= session_max_inflight:
-                            ws_debug["frames_dropped_backpressure"] = (
-                                int(ws_debug.get("frames_dropped_backpressure", 0)) + 1
-                            )
-                            return []
+                            if len(session.pending_frames) == 0:
+                                ws_debug["frames_dropped_backpressure"] = (
+                                    int(ws_debug.get("frames_dropped_backpressure", 0)) + 1
+                                )
+                                return []
 
                         if first_edit_capture_ms is None:
                             first_edit_capture_ms = frame_meta.get("t_capture_ms", 0.0)
