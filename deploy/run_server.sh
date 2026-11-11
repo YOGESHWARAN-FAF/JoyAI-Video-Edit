@@ -60,7 +60,7 @@ export JOYOMNI_SAGE_ATTN="${JOYOMNI_SAGE_ATTN:-0}"
 export JOYOMNI_FA4_ATTN="${JOYOMNI_FA4_ATTN:-1}"
 export JOYOMNI_FP8_FAST_ACCUM="${JOYOMNI_FP8_FAST_ACCUM:-0}"
 export JOYOMNI_LOW_VRAM="${JOYOMNI_LOW_VRAM:-0}"
-export JOYOMNI_TRIAL_DURATION_S="${JOYOMNI_TRIAL_DURATION_S:-15}"
+export JOYOMNI_TRIAL_DURATION_S="${JOYOMNI_TRIAL_DURATION_S:-30}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-qwen}"
@@ -96,7 +96,7 @@ python xvideo/serving/serve_joyomni_streaming.py \
   --postprocess-device "$DEVICE" \
   --width "${JOYOMNI_WIDTH:-840}" --height "${JOYOMNI_HEIGHT:-480}" \
   --fps "${JOYOMNI_FPS:-24}" \
-  --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-15}" \
+  --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-30}" \
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
   --host "$HOST" --port "$PORT" \
   "$@"

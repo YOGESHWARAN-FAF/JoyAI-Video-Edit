@@ -283,6 +283,62 @@ def _detect_gate_faces(image: Image.Image, *, onnx_path: str, score_thresh: floa
     return out, float(w), float(h)
 
 
+def _sanitize_reference_garment_image(image: Image.Image, onnx_path: str = DEFAULT_FACE_DETECTOR_ONNX) -> Image.Image:
+    """Detect and mask out any face/head in a clothing reference image so the model ONLY transfers garments."""
+    if image is None:
+        return None
+    try:
+        import cv2
+        import numpy as np
+        faces, fw, fh = _detect_gate_faces(image, onnx_path=onnx_path, score_thresh=0.25)
+        if not faces:
+            return image
+        
+        img_np = np.array(image.convert("RGB"))
+        h_orig, w_orig = img_np.shape[:2]
+        
+        scale_x = w_orig / fw if fw > 0 else 1.0
+        scale_y = h_orig / fh if fh > 0 else 1.0
+
+        # Sample background color from image border corners
+        bg_h = max(2, h_orig // 20)
+        bg_w = max(2, w_orig // 20)
+        bg_corners = np.concatenate([
+            img_np[0:bg_h, 0:bg_w],
+            img_np[0:bg_h, -bg_w:]
+        ], axis=0)
+        bg_sample = np.median(bg_corners, axis=(0, 1)).astype(np.uint8)
+
+        mask = np.zeros((h_orig, w_orig), dtype=np.float32)
+        for (fx, fy, f_w, f_h) in faces:
+            x = int(fx * scale_x)
+            y = int(fy * scale_y)
+            w = int(f_w * scale_x)
+            h = int(f_h * scale_y)
+
+            # Cover full head, hair and face down to neck
+            top = 0 if y < h_orig * 0.4 else max(0, int(y - 0.7 * h))
+            bottom = min(h_orig, int(y + 1.15 * h))
+            left = max(0, int(x - 0.35 * w))
+            right = min(w_orig, int(x + 1.35 * w))
+
+            center = ((left + right) // 2, (top + bottom) // 2)
+            axes = ((right - left) // 2, (bottom - top) // 2)
+            cv2.ellipse(mask, center, axes, 0, 0, 360, 1.0, -1)
+            if top == 0:
+                mask[0:center[1], left:right] = 1.0
+
+        # Smooth feather the mask boundary so there is no hard seam
+        ksize = max(5, int(min(w_orig, h_orig) * 0.04) | 1)
+        mask = cv2.GaussianBlur(mask, (ksize, ksize), 0)[:, :, np.newaxis]
+        sanitized_np = (img_np * (1.0 - mask) + bg_sample * mask).astype(np.uint8)
+        print(f"#####[REF-GARMENT] Sanitized reference image: masked {len(faces)} face/head region(s) to isolate clothing only.", flush=True)
+        return Image.fromarray(sanitized_np)
+    except Exception as exc:
+        print(f"#####[REF-GARMENT] Notice during reference image face restriction: {exc!r}", flush=True)
+        return image
+
+
 def _face_present_from(faces, w, h, *, min_ratio: float = 0.0, edge_margin: float = 0.0) -> bool:
     if faces is None:
         return True
@@ -1589,6 +1645,11 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         except Exception as exc:
                             await _send_json({"type": "error", "message": f"failed to decode ref image: {exc!r}"})
                             continue
+                        if ref_image is not None:
+                            ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
+                            protect_clause = " Transfer only the clothing, outfit and garment style from the reference image. Keep the subject's face, facial features, facial identity, skin tone, hair, head, and the background completely unchanged and identical to the original."
+                            if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
+                                session_prompt = f"{session_prompt.rstrip('. ')}.{protect_clause}"
                         kv_reset_frames = max(0, int(payload.get("kv_reset_frames", args.kv_reset_frames)))
                         output_quality = max(1, min(100, int(payload.get("output_quality", output_quality))))
                         lossless_mode = str(payload.get("source", "")) == "file"
@@ -2302,8 +2363,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt", type=str, default="Keep the person and scene temporally consistent while applying the requested edit.")
     parser.add_argument("--profile-timings", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--trial-duration-s", type=float,
-                        default=float(os.environ.get("JOYOMNI_TRIAL_DURATION_S", "15.0")),
-                        help="Product trial duration in seconds (default: 15.0). Automatically finalizes session and purges GPU memory.")
+                        default=float(os.environ.get("JOYOMNI_TRIAL_DURATION_S", "30.0")),
+                        help="Product trial duration in seconds (default: 30.0). Automatically finalizes session and purges GPU memory.")
     parser.add_argument("--kv-reset-frames", type=int, default=600)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
     parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction, default=True)
