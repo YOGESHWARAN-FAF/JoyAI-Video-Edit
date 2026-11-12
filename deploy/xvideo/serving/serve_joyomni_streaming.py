@@ -2471,11 +2471,11 @@ def build_parser() -> argparse.ArgumentParser:
                         default=os.environ.get("JOYOMNI_ROI_MODE", "1") == "1",
                         help="Enable dynamic Person RoI cropping to eliminate background DiT compute.")
     parser.add_argument("--roi-width", type=int,
-                        default=int(os.environ.get("JOYOMNI_ROI_WIDTH", "576")),
-                        help="Target width for person RoI crop (must be multiple of 32).")
+                        default=int(os.environ.get("JOYOMNI_ROI_WIDTH", "864")),
+                        help="Target width for person RoI crop (must be multiple of 24).")
     parser.add_argument("--roi-height", type=int,
-                        default=int(os.environ.get("JOYOMNI_ROI_HEIGHT", "768")),
-                        help="Target height for person RoI crop (must be multiple of 32).")
+                        default=int(os.environ.get("JOYOMNI_ROI_HEIGHT", "720")),
+                        help="Target height for person RoI crop (must be multiple of 24).")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
     parser.add_argument("--record-codec", type=str, default="libx264", help="Recording video codec (PyAV/ffmpeg name).")

@@ -119,19 +119,16 @@ class WhiteStudioCompositor:
                 norm_in = (flat_in.to(dtype=dtyp) - mean) / std
 
                 out = self.segmenter(norm_in)["out"]  # (b*t, 21, seg_h, seg_w)
-                logits_person = out[:, 15:16].to(dtype=torch.float32)  # Pascal VOC class 15 = person
-                logits_bg = out[:, 0:1].to(dtype=torch.float32)
+                # True 21-class competitive softmax: strictly suppresses chairs (class 9), tables (class 11), sofas (class 18)
+                probs = torch.softmax(out.to(dtype=torch.float32), dim=1)
+                prob_person = probs[:, 15:16]  # Pascal VOC class 15 = person strictly
 
-                diff_logits = logits_person - logits_bg
-                # High-contrast calibrated sigmoid for clean silhouette conforming to actual body/arms
-                prob = torch.sigmoid(diff_logits * 2.2)
-
-                if prob.shape[-2] != h or prob.shape[-1] != w:
-                    alpha_flat = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
+                if prob_person.shape[-2] != h or prob_person.shape[-1] != w:
+                    alpha_flat = F.interpolate(prob_person, size=(h, w), mode="bilinear", align_corners=False)
                 else:
-                    alpha_flat = prob
+                    alpha_flat = prob_person
 
-                # Contoured boundary thresholding (prevents clipping arms while removing chair/wall)
+                # Contoured boundary thresholding (cleanly removes chair headrest and stands while preserving arms)
                 alpha_tight = torch.clamp((alpha_flat - 0.28) / 0.44, 0.0, 1.0)
 
                 # Subtle 3x3 anti-aliasing feather on boundary (preserves fine finger and cloth contour)

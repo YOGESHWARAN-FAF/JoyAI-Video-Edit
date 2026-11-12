@@ -19,7 +19,7 @@ class PersonRoIManager:
 
     def __init__(
         self,
-        target_w: int = 576,
+        target_w: int = 864,
         target_h: int = 720,
         ema_alpha: float = 0.15,
         align: int = 24,
