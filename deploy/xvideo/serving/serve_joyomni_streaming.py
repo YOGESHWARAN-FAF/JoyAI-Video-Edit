@@ -1709,21 +1709,15 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             clean_raw = raw_session_prompt.strip()
                             if not clean_raw or clean_raw == args.prompt:
                                 session_prompt = (
-                                    "Ultra-realistic photorealistic virtual try-on: Flawlessly dress the person in the exact garment and outfit from the reference image. "
-                                    "Completely overwrite, replace, and cover all original clothing, t-shirts, neckline, and sleeves. "
-                                    "Extend sleeves cleanly along the full length of the arms as shown in the reference image, with crisp cuffs and natural cloth wrinkles. "
-                                    "Replicate the exact fabric texture, colors, pattern, seams, buttons, and collar structure with high-definition realism. "
-                                    "Render natural fabric drape and dynamic textile folds that conform realistically to body movement. "
-                                    "For half-body and full-body views, cleanly fit the garments to the chest, torso, waist, and hips with natural 3D depth. "
-                                    "Keep the person's face, facial features, facial identity, hair, skin tone, hands, and the background completely unchanged and identical."
+                                    "Replace the person's clothing with the exact outfit from the reference image. "
+                                    "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
+                                    "Keep the person's face, hair, skin, and background completely unchanged."
                                 )
                             else:
                                 protect_clause = (
-                                    "Ultra-realistic virtual try-on: Flawlessly transfer the garment and outfit from the reference image onto the person's body. "
-                                    "Completely replace and cover all previous clothing, t-shirts, collars, and sleeves. "
-                                    "Extend sleeves cleanly along the arms as shown in the reference garment, with natural cloth wrinkles, textile drape, and 3D depth. "
-                                    "For half-body and full-body poses, fit the garments cleanly to the torso, waist, and legs with natural seams. "
-                                    "Keep the person's face, facial features, facial identity, skin tone, hair, hands, and background completely unchanged."
+                                    "Replace the person's clothing with the exact outfit from the reference image. "
+                                    "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
+                                    "Keep the person's face, hair, skin, and background completely unchanged."
                                 )
                                 if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
                                     session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
@@ -2456,7 +2450,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preload", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--session-init-timeout-s", type=float, default=120.0, help="Timeout for session initialization, with or without a reference image.")
     parser.add_argument("--push-frame-timeout-s", type=float, default=15.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")
-    parser.add_argument("--max-inflight-chunks", type=int, default=2, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
+    parser.add_argument("--max-inflight-chunks", type=int, default=3, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
     parser.add_argument("--session-close-timeout-s", type=float, default=15.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
 

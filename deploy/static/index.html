@@ -1359,37 +1359,21 @@ function displayOutputFrame(item) {
     waitHintReason = null;
     if (outputWaitOverlay) outputWaitOverlay.style.display = "none";
   }
-  if (item.bmp) {
-    if (outputCanvas.style.display === "none") {
-      outputCanvas.style.display = "";
-      outputImg.style.display = "none";
-    }
-    if (outputCanvas.width !== item.bmp.width || outputCanvas.height !== item.bmp.height) {
-      outputCanvas.width = item.bmp.width;
-      outputCanvas.height = item.bmp.height;
-      if (outputCanvasCtx) {
-        outputCanvasCtx.imageSmoothingEnabled = true;
-        outputCanvasCtx.imageSmoothingQuality = "high";
-      }
-    }
-    outputCanvasCtx.drawImage(item.bmp, 0, 0);
-    item.bmp.close();
-    item.bmp = null;
-  } else {
+  if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
+  pendingRevokeUrl = lastObjectUrl;
+  lastObjectUrl = item.url;
+  outputImg.onload = outputImg.onerror = function() {
     if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
-    pendingRevokeUrl = lastObjectUrl;
-    lastObjectUrl = item.url;
-    outputImg.onload = outputImg.onerror = function() {
-      if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
-      outputImg.onload = outputImg.onerror = null;
-      if (outputCanvas.width !== (outputImg.naturalWidth || 840) || outputCanvas.height !== (outputImg.naturalHeight || 480)) {
-        outputCanvas.width = outputImg.naturalWidth || 840;
-        outputCanvas.height = outputImg.naturalHeight || 480;
-      }
-      if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
-    };
-    outputImg.src = item.url;
-  }
+    outputImg.onload = outputImg.onerror = null;
+    const nw = outputImg.naturalWidth || 840;
+    const nh = outputImg.naturalHeight || 480;
+    if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
+      outputCanvas.width = nw;
+      outputCanvas.height = nh;
+    }
+    if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
+  };
+  outputImg.src = item.url;
   displayedFrames += 1;
   displayedFramesWindow += 1;
   if (displayedFrames === 1) {
@@ -1426,8 +1410,8 @@ function pumpOutputFrame() {
 
   // Emergency clamp: Never drop frames during normal 8-frame chunk cycles!
   // Only drop if network stalled and queue backed up beyond 24 frames (> 3 server chunks).
-  if (outputFrameQueue.length > 24) {
-    while (outputFrameQueue.length > 12) {
+  if (outputFrameQueue.length > 48) {
+    while (outputFrameQueue.length > 36) {
       const dropped = outputFrameQueue.shift();
       disposeItem(dropped);
       outputQueueDroppedFrames += 1;
@@ -1709,7 +1693,7 @@ function enqueueOutputFrame(frame, meta) {
     }
     outputFrameQueue[i] = item;
   }
-  while (outputFrameQueue.length > (outCodecH264 ? 12 : 24)) {
+  while (outputFrameQueue.length > (outCodecH264 ? 24 : 48)) {
     const dropped = outputFrameQueue.shift();
     if (dropped) { disposeItem(dropped); outputQueueDroppedFrames += 1; }
   }
@@ -2284,20 +2268,7 @@ async function start() {
       feedOutputH264(event.data, meta);
       return;
     }
-    const blob = new Blob([event.data], { type: "image/jpeg" });
-    if (typeof createImageBitmap !== "undefined") {
-      createImageBitmap(blob).then((bmp) => {
-        if (meta && meta.session_id && meta.session_id !== activeSessionId) {
-          bmp.close();
-          return;
-        }
-        enqueueOutputFrame(bmp, meta);
-      }).catch(() => {
-        enqueueOutputFrame(blob, meta);
-      });
-    } else {
-      enqueueOutputFrame(blob, meta);
-    }
+    enqueueOutputFrame(new Blob([event.data], { type: "image/jpeg" }), meta);
   };
   socket.onclose = () => {
     if (ws !== socket) return;
