@@ -1844,6 +1844,10 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             static_diff_thresh=static_diff_thresh,
                             profile_timings=bool(payload.get("profile_timings", args.profile_timings)),
                             output_codec=output_codec,
+                            studio_white=bool(getattr(args, "studio_white", True)),
+                            roi_mode=bool(getattr(args, "roi_mode", True)),
+                            roi_width=int(getattr(args, "roi_width", 576)),
+                            roi_height=int(getattr(args, "roi_height", 768)),
                         )
 
                         print("#####[RESTART] creating new session", flush=True)
@@ -2237,6 +2241,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             _rec_i.submit(frame, frame_meta.get("t_capture_ms"))
                             ws_debug["rec_in_written"] = _rec_i.frames_written
                             ws_debug["rec_in_dropped"] = _rec_i.frames_dropped_recording
+                        if gate_state.get("cx") is not None and gate_state.get("cy") is not None:
+                            frame_meta["face_center"] = (gate_state["cx"], gate_state["cy"])
                         session.push_frame(frame, frame_meta=frame_meta, drain_results=False)
                         edit_frames += 1
                         return []
@@ -2453,6 +2459,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-inflight-chunks", type=int, default=3, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
     parser.add_argument("--session-close-timeout-s", type=float, default=15.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
+
+    parser.add_argument("--studio-white", action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("JOYOMNI_STUDIO_WHITE", "1") == "1",
+                        help="Enable pure solid studio white background (#FFFFFF).")
+    parser.add_argument("--roi-mode", action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("JOYOMNI_ROI_MODE", "1") == "1",
+                        help="Enable dynamic Person RoI cropping to eliminate background DiT compute.")
+    parser.add_argument("--roi-width", type=int,
+                        default=int(os.environ.get("JOYOMNI_ROI_WIDTH", "576")),
+                        help="Target width for person RoI crop (must be multiple of 32).")
+    parser.add_argument("--roi-height", type=int,
+                        default=int(os.environ.get("JOYOMNI_ROI_HEIGHT", "768")),
+                        help="Target height for person RoI crop (must be multiple of 32).")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
     parser.add_argument("--record-codec", type=str, default="libx264", help="Recording video codec (PyAV/ffmpeg name).")

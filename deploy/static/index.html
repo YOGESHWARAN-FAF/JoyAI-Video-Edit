@@ -43,6 +43,7 @@
     .media-box img:not([src]) { visibility: hidden; }
     .media-box video, .media-box canvas, .media-box img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; transition: object-fit 0.2s ease; }
     .media-box.fit-contain video, .media-box.fit-contain canvas, .media-box.fit-contain img { object-fit: contain; }
+    .media-box.studio-white { background: #ffffff !important; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
     .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: #cfcfca; }
     .overlay .hint { font-size: 13px; color: #9a9a95; max-width: 320px; line-height: 1.5; text-wrap: balance; }
     .overlay .idle-ico { font-size: 30px; color: #6f6f6a; }
@@ -469,7 +470,7 @@
         <button id="btnDownloadHeader" type="button" class="vp-btn vp-btn-accent" title="Download Try-On Video">⬇️ <span data-i18n="download">Download HD</span></button>
       </span>
     </div>
-    <div class="media-box fill-view">
+    <div class="media-box fill-view studio-white" id="resultMediaBox">
       <img id="outputImg" alt="编辑输出" data-i18n-alt="output_img_alt" />
       <canvas id="outputCanvas" style="display:none"></canvas>
       <video id="outputResult" playsinline controls style="display:none; position:absolute; inset:0; z-index:4;"></video>
@@ -1364,8 +1365,8 @@ function displayOutputFrame(item) {
       outputCanvas.style.display = "";
       outputImg.style.display = "none";
     }
-    const w = item.bmp.width || sessionConfig.width || 840;
-    const h = item.bmp.height || sessionConfig.height || 480;
+    const w = item.bmp.width || sessionConfig.width || 1280;
+    const h = item.bmp.height || sessionConfig.height || 720;
     if (outputCanvas.width !== w || outputCanvas.height !== h) {
       outputCanvas.width = w;
       outputCanvas.height = h;
@@ -1388,8 +1389,8 @@ function displayOutputFrame(item) {
     outputImg.onload = outputImg.onerror = function() {
       if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
       outputImg.onload = outputImg.onerror = null;
-      const nw = outputImg.naturalWidth || sessionConfig.width || 840;
-      const nh = outputImg.naturalHeight || sessionConfig.height || 480;
+      const nw = outputImg.naturalWidth || sessionConfig.width || 1280;
+      const nh = outputImg.naturalHeight || sessionConfig.height || 720;
       if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
         outputCanvas.width = nw;
         outputCanvas.height = nh;
