@@ -592,7 +592,7 @@
 const SERVER_DEFAULTS = __SERVER_DEFAULTS__;
 const sessionConfig = {
   ...SERVER_DEFAULTS,
-  camera_fps: 24,
+  camera_fps: (SERVER_DEFAULTS && SERVER_DEFAULTS.fps) ? Number(SERVER_DEFAULTS.fps) : 16,
   uplink_quality: 0.92,
   smooth_playback: true,
   target_queue_delay_ms: 200,
@@ -1070,8 +1070,8 @@ function defaultCameraOrientation() {
   return (isMobile || portraitViewport) ? "portrait" : "landscape";
 }
 function orientDims(o) {
-  const a = SERVER_DEFAULTS.width;
-  const b = SERVER_DEFAULTS.height;
+  const a = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) || 1248;
+  const b = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) || 720;
   const long = Math.max(a, b), short = Math.min(a, b);
   return o === "portrait" ? { width: short, height: long } : { width: long, height: short };
 }

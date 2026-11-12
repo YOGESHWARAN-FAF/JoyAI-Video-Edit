@@ -1832,8 +1832,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         _align = runtime.pipeline.vae.stem.stride * 8
                         _req_h = int(payload.get("height", args.height))
                         _req_w = int(payload.get("width", args.width))
-                        _long = _snap_to_align(max(args.height, args.width), _align)
-                        _short = _snap_to_align(min(args.height, args.width), _align)
+                        _long = _snap_to_align(max(_req_h, _req_w), _align)
+                        _short = _snap_to_align(min(_req_h, _req_w), _align)
                         if _req_h > _req_w:
                             _sh, _sw = _long, _short
                         else:
@@ -2395,10 +2395,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vae-pseudo-device", type=str, default=None)
     parser.add_argument("--postprocess-device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--height", type=int, default=480)
-    parser.add_argument("--width", type=int, default=840)
-    parser.add_argument("--num-inference-steps", type=int, default=2)
-    parser.add_argument("--fps", type=int, default=24, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
+    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--width", type=int, default=1248)
+    parser.add_argument("--num-inference-steps", type=int, default=1)
+    parser.add_argument("--fps", type=int, default=16, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
     parser.add_argument("--use-pe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pe-backend", choices=("qwen", "api", "none"),
                         default=os.environ.get("JOYOMNI_PE_BACKEND", "qwen"))
