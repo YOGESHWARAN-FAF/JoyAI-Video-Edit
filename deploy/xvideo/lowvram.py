@@ -35,7 +35,18 @@ def vram_cap_bytes() -> int | None:
 
 
 def low_vram_enabled() -> bool:
-    return _env("JOYOMNI_LOW_VRAM") in _TRUTHY
+    env = _env("JOYOMNI_LOW_VRAM")
+    if env:
+        return env in _TRUTHY
+    # Auto-enable on cards with <= 50 GiB VRAM (e.g. L40S, A40, RTX 4090/5090)
+    if torch.cuda.is_available():
+        try:
+            free_b, total_b = torch.cuda.mem_get_info()
+            if total_b <= 50 * 2**30:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def te_cpu_offload_enabled() -> bool:

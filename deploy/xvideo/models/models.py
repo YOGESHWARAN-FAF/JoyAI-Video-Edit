@@ -170,7 +170,8 @@ def load_dit(cfg, device: torch.device) -> torch.nn.Module:
     model = Transformer3DModel(
         dtype=dtype, device=build_device, **_arch_params(cfg.dit_arch_config)
     )
-    model.to(device=build_device)
+    if build_device != torch.device("cpu") and build_device != device:
+        model.to(device=build_device)
 
     if state_dict is not None:
         for prefix in ("model.", "module.", "transformer."):
@@ -196,6 +197,13 @@ def load_dit(cfg, device: torch.device) -> torch.nn.Module:
             logger.warning(f"Missing keys when loading DiT: {missing_keys[:20]}")
         if unexpected_keys:
             logger.warning(f"Unexpected keys when loading DiT: {unexpected_keys[:20]}")
+
+        del state_dict
+        del load_state_dict
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(f"Instantiate model with {total_params / 1e9:.2f}B parameters")
