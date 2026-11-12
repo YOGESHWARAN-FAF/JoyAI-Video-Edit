@@ -1359,21 +1359,45 @@ function displayOutputFrame(item) {
     waitHintReason = null;
     if (outputWaitOverlay) outputWaitOverlay.style.display = "none";
   }
-  if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
-  pendingRevokeUrl = lastObjectUrl;
-  lastObjectUrl = item.url;
-  outputImg.onload = outputImg.onerror = function() {
-    if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
-    outputImg.onload = outputImg.onerror = null;
-    const nw = outputImg.naturalWidth || 840;
-    const nh = outputImg.naturalHeight || 480;
-    if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
-      outputCanvas.width = nw;
-      outputCanvas.height = nh;
+  if (item.bmp) {
+    if (outputCanvas.style.display === "none") {
+      outputCanvas.style.display = "";
+      outputImg.style.display = "none";
     }
-    if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
-  };
-  outputImg.src = item.url;
+    const w = item.bmp.width || sessionConfig.width || 840;
+    const h = item.bmp.height || sessionConfig.height || 480;
+    if (outputCanvas.width !== w || outputCanvas.height !== h) {
+      outputCanvas.width = w;
+      outputCanvas.height = h;
+      if (outputCanvasCtx) {
+        outputCanvasCtx.imageSmoothingEnabled = true;
+        outputCanvasCtx.imageSmoothingQuality = "high";
+      }
+    }
+    if (outputCanvasCtx) outputCanvasCtx.drawImage(item.bmp, 0, 0);
+    try { item.bmp.close(); } catch (e) {}
+    item.bmp = null;
+  } else if (item.url) {
+    if (outputImg.style.display === "none") {
+      outputImg.style.display = "";
+      outputCanvas.style.display = "none";
+    }
+    if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
+    pendingRevokeUrl = lastObjectUrl;
+    lastObjectUrl = item.url;
+    outputImg.onload = outputImg.onerror = function() {
+      if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
+      outputImg.onload = outputImg.onerror = null;
+      const nw = outputImg.naturalWidth || sessionConfig.width || 840;
+      const nh = outputImg.naturalHeight || sessionConfig.height || 480;
+      if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
+        outputCanvas.width = nw;
+        outputCanvas.height = nh;
+      }
+      if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
+    };
+    outputImg.src = item.url;
+  }
   displayedFrames += 1;
   displayedFramesWindow += 1;
   if (displayedFrames === 1) {
