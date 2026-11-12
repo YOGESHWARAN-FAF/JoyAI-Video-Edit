@@ -866,6 +866,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             "pe_available": pe_available(args.pe_backend),
             "max_temporal_ids": args.max_temporal_ids,
             "record_enabled": args.record_dir is not None,
+            "trial_duration_s": args.trial_duration_s,
         }
         html = _load_index_html().replace("__SERVER_DEFAULTS__", json.dumps(server_defaults))
         return HTMLResponse(
@@ -1708,20 +1709,21 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             clean_raw = raw_session_prompt.strip()
                             if not clean_raw or clean_raw == args.prompt:
                                 session_prompt = (
-                                    "Photorealistic virtual try-on: Change the person's clothes to match the clothing and outfit shown in the reference image. "
-                                    "Completely replace and overwrite all original clothing, torso layout, collars, and sleeves with the new outfit. "
-                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, and garment structure with high realistic detail. "
-                                    "Render natural fabric drape, dynamic cloth wrinkles, soft realistic folds, authentic textile texture, and natural seams that naturally deform and crease with body movement. "
-                                    "Ensure realistic sleeve articulation, authentic collar depth, and natural inner shirt shading with 3D depth and environmental lighting. "
-                                    "For half-body and full-body views, cleanly fit the garments to the torso, waist, arms, and legs with natural proportions, avoiding flat, rigid, or cartoonish textures. "
-                                    "Keep the subject's face, facial features, facial identity, hair, skin tone, hands, and the background completely unchanged and identical."
+                                    "Ultra-realistic photorealistic virtual try-on: Flawlessly dress the person in the exact garment and outfit from the reference image. "
+                                    "Completely overwrite, replace, and cover all original clothing, t-shirts, neckline, and sleeves. "
+                                    "Extend sleeves cleanly along the full length of the arms as shown in the reference image, with crisp cuffs and natural cloth wrinkles. "
+                                    "Replicate the exact fabric texture, colors, pattern, seams, buttons, and collar structure with high-definition realism. "
+                                    "Render natural fabric drape and dynamic textile folds that conform realistically to body movement. "
+                                    "For half-body and full-body views, cleanly fit the garments to the chest, torso, waist, and hips with natural 3D depth. "
+                                    "Keep the person's face, facial features, facial identity, hair, skin tone, hands, and the background completely unchanged and identical."
                                 )
                             else:
                                 protect_clause = (
-                                    "Photorealistic virtual try-on: Completely replace and overwrite all previous clothing, torso layout, collars, and sleeves with the new outfit. "
-                                    "Transfer the clothing, outfit, and garment style from the reference image onto the person's body with authentic fabric texture, natural drape, dynamic cloth wrinkles, and realistic 3D volume. "
-                                    "For half-body and full-body poses, fit the garments cleanly to the torso, waist, arms, and legs with natural textile folds and realistic seams. "
-                                    "Keep the subject's face, facial features, facial identity, skin tone, hair, head, hands, and the surrounding background completely unchanged and identical to the original."
+                                    "Ultra-realistic virtual try-on: Flawlessly transfer the garment and outfit from the reference image onto the person's body. "
+                                    "Completely replace and cover all previous clothing, t-shirts, collars, and sleeves. "
+                                    "Extend sleeves cleanly along the arms as shown in the reference garment, with natural cloth wrinkles, textile drape, and 3D depth. "
+                                    "For half-body and full-body poses, fit the garments cleanly to the torso, waist, and legs with natural seams. "
+                                    "Keep the person's face, facial features, facial identity, skin tone, hair, hands, and background completely unchanged."
                                 )
                                 if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
                                     session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
@@ -2395,10 +2397,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vae-pseudo-device", type=str, default=None)
     parser.add_argument("--postprocess-device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--height", type=int, default=720)
-    parser.add_argument("--width", type=int, default=1248)
+    parser.add_argument("--height", type=int, default=480)
+    parser.add_argument("--width", type=int, default=840)
     parser.add_argument("--num-inference-steps", type=int, default=1)
-    parser.add_argument("--fps", type=int, default=16, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
+    parser.add_argument("--fps", type=int, default=20, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
     parser.add_argument("--use-pe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pe-backend", choices=("qwen", "api", "none"),
                         default=os.environ.get("JOYOMNI_PE_BACKEND", "qwen"))
@@ -2445,8 +2447,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt", type=str, default="Keep the person and scene temporally consistent while applying the requested edit.")
     parser.add_argument("--profile-timings", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--trial-duration-s", type=float,
-                        default=float(os.environ.get("JOYOMNI_TRIAL_DURATION_S", "30.0")),
-                        help="Product trial duration in seconds (default: 30.0). Automatically finalizes session and purges GPU memory.")
+                        default=float(os.environ.get("JOYOMNI_TRIAL_DURATION_S", "15.0")),
+                        help="Product trial duration in seconds (default: 15.0). Automatically finalizes session and purges GPU memory.")
     parser.add_argument("--kv-reset-frames", type=int, default=600)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
     parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction, default=True)

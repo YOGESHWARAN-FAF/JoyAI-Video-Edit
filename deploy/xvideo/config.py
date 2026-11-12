@@ -59,7 +59,7 @@ class ExpConfig:
         default_factory=lambda: {"params": {"num_train_timesteps": 1000, "shift": 5.159}}
     )
 
-    ref_image_basesize: int = int(os.environ.get("JOYOMNI_REF_BASESIZE", "1024"))
+    ref_image_basesize: int = int(os.environ.get("JOYOMNI_REF_BASESIZE", "768"))
 
 
 BASE_BUCKET_SIZE = 256

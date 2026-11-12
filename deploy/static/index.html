@@ -496,8 +496,8 @@
       <div id="trialModal" class="trial-modal-overlay" style="display:none">
         <div class="trial-modal-card">
           <div class="trial-modal-icon">🎉</div>
-          <h3 data-i18n="trial_complete_title">30-Second Try-On Complete!</h3>
-          <p data-i18n="trial_complete_desc">Your 30-second virtual try-on session has finished and GPU memory has been freed cleanly.</p>
+          <h3 data-i18n="trial_complete_title">15-Second Try-On Complete!</h3>
+          <p data-i18n="trial_complete_desc">Your 15-second virtual try-on session has finished and GPU memory has been freed cleanly.</p>
           <div class="trial-actions-grid">
             <button id="btnTrialDownload" type="button" class="trial-btn-primary">
               <span>⬇️</span> <span data-i18n="download_video">Download Video (MP4)</span>
@@ -592,7 +592,7 @@
 const SERVER_DEFAULTS = __SERVER_DEFAULTS__;
 const sessionConfig = {
   ...SERVER_DEFAULTS,
-  camera_fps: (SERVER_DEFAULTS && SERVER_DEFAULTS.fps) ? Number(SERVER_DEFAULTS.fps) : 16,
+  camera_fps: (SERVER_DEFAULTS && SERVER_DEFAULTS.fps) ? Number(SERVER_DEFAULTS.fps) : 20,
   uplink_quality: 0.92,
   smooth_playback: true,
   target_queue_delay_ms: 200,
@@ -664,8 +664,8 @@ const I18N = {
     up_auto_tail: " · 上行已自动降至中档",
     res_notice: "本演示运行在 {res}，而非模型原生的 1248×720 分辨率，画质与编辑效果会有所下降。",
     trial_tag: "体验倒计时:",
-    trial_complete_title: "30秒试穿体验已完成！",
-    trial_complete_desc: "30秒试穿视频已生成完毕，显存已深度清理释放。",
+    trial_complete_title: "15秒试穿体验已完成！",
+    trial_complete_desc: "15秒试穿视频已生成完毕，显存已深度清理释放。",
     download_video: "⬇️ 下载试穿视频 (MP4)",
     try_another: "✨ 再试一套服装",
     download_hd: "⬇️ 下载视频 (HD)",
@@ -740,8 +740,8 @@ const I18N = {
     up_auto_tail: " · uplink auto-lowered to mid",
     res_notice: "This demo runs at {res}, not the model's native 1248×720 resolution; visual quality and edit fidelity are reduced.",
     trial_tag: "Trial:",
-    trial_complete_title: "30-Second Try-On Complete!",
-    trial_complete_desc: "Your 30-second try-on video has been generated and GPU memory has been purged cleanly.",
+    trial_complete_title: "15-Second Try-On Complete!",
+    trial_complete_desc: "Your 15-second try-on video has been generated and GPU memory has been purged cleanly.",
     download_video: "⬇️ Download Try-On Video (MP4)",
     try_another: "✨ Try Another Outfit",
     download_hd: "⬇️ Download Video (HD)",
@@ -1070,8 +1070,8 @@ function defaultCameraOrientation() {
   return (isMobile || portraitViewport) ? "portrait" : "landscape";
 }
 function orientDims(o) {
-  const a = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) || 1248;
-  const b = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) || 720;
+  const a = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) || 840;
+  const b = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) || 480;
   const long = Math.max(a, b), short = Math.min(a, b);
   return o === "portrait" ? { width: short, height: long } : { width: long, height: short };
 }
@@ -1304,11 +1304,11 @@ function blankOutputPane() {
 }
 
 let trialTimer = null;
-let trialSecRemaining = 30;
+let trialSecRemaining = 15;
 
-function startTrialCountdown(sec = 30) {
+function startTrialCountdown(sec = 15) {
   if (trialTimer) clearInterval(trialTimer);
-  trialSecRemaining = sec;
+  trialSecRemaining = Math.round(Number(sec) || (sessionConfig.trial_duration_s ? Number(sessionConfig.trial_duration_s) : 15));
   const badge = document.getElementById("trialBadge");
   const countEl = document.getElementById("trialCountdown");
   const modal = document.getElementById("trialModal");
@@ -1360,6 +1360,10 @@ function displayOutputFrame(item) {
     if (outputWaitOverlay) outputWaitOverlay.style.display = "none";
   }
   if (item.bmp) {
+    if (outputCanvas.style.display === "none") {
+      outputCanvas.style.display = "";
+      outputImg.style.display = "none";
+    }
     if (outputCanvas.width !== item.bmp.width || outputCanvas.height !== item.bmp.height) {
       outputCanvas.width = item.bmp.width;
       outputCanvas.height = item.bmp.height;
@@ -1378,6 +1382,11 @@ function displayOutputFrame(item) {
     outputImg.onload = outputImg.onerror = function() {
       if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
       outputImg.onload = outputImg.onerror = null;
+      if (outputCanvas.width !== (outputImg.naturalWidth || 840) || outputCanvas.height !== (outputImg.naturalHeight || 480)) {
+        outputCanvas.width = outputImg.naturalWidth || 840;
+        outputCanvas.height = outputImg.naturalHeight || 480;
+      }
+      if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
     };
     outputImg.src = item.url;
   }
@@ -1385,7 +1394,7 @@ function displayOutputFrame(item) {
   displayedFramesWindow += 1;
   if (displayedFrames === 1) {
     startClientRecording();
-    startTrialCountdown(30);
+    startTrialCountdown(sessionConfig.trial_duration_s || 15);
   }
   const meta = item.meta;
   if (meta) {
@@ -2275,7 +2284,20 @@ async function start() {
       feedOutputH264(event.data, meta);
       return;
     }
-    enqueueOutputFrame(new Blob([event.data]), meta);
+    const blob = new Blob([event.data], { type: "image/jpeg" });
+    if (typeof createImageBitmap !== "undefined") {
+      createImageBitmap(blob).then((bmp) => {
+        if (meta && meta.session_id && meta.session_id !== activeSessionId) {
+          bmp.close();
+          return;
+        }
+        enqueueOutputFrame(bmp, meta);
+      }).catch(() => {
+        enqueueOutputFrame(blob, meta);
+      });
+    } else {
+      enqueueOutputFrame(blob, meta);
+    }
   };
   socket.onclose = () => {
     if (ws !== socket) return;
@@ -3269,7 +3291,7 @@ function startClientRecording() {
         : (MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "video/mp4");
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: mime,
-        videoBitsPerSecond: 6000000,
+        videoBitsPerSecond: 10000000,
       });
       mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) recordedChunks.push(e.data);

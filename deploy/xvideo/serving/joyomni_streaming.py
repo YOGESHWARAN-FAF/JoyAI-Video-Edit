@@ -22,7 +22,7 @@ from xvideo.models.pipeline import (
 from xvideo.serving.graph_runner import GRAPH_WINDOW_CHUNKS, StreamingGraphRunner, graph_env_enabled
 from xvideo.utils import _dynamic_resize_from_bucket, seed_everything
 
-DEFAULT_REFERENCE_IMG_IV2V_BASESIZE = int(os.environ.get("JOYOMNI_REF_BASESIZE", "1024"))
+DEFAULT_REFERENCE_IMG_IV2V_BASESIZE = int(os.environ.get("JOYOMNI_REF_BASESIZE", "768"))
 
 try:
     from torchvision.io import encode_jpeg as _tv_encode_jpeg

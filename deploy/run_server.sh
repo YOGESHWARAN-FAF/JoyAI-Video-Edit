@@ -60,11 +60,11 @@ export JOYOMNI_SAGE_ATTN="${JOYOMNI_SAGE_ATTN:-0}"
 export JOYOMNI_FA4_ATTN="${JOYOMNI_FA4_ATTN:-1}"
 export JOYOMNI_FP8_FAST_ACCUM="${JOYOMNI_FP8_FAST_ACCUM:-1}"
 export JOYOMNI_LOW_VRAM="${JOYOMNI_LOW_VRAM:-0}"
-export JOYOMNI_TRIAL_DURATION_S="${JOYOMNI_TRIAL_DURATION_S:-30}"
+export JOYOMNI_TRIAL_DURATION_S="${JOYOMNI_TRIAL_DURATION_S:-15}"
 export JOYOMNI_SHARPNESS="${JOYOMNI_SHARPNESS:-0.42}"
-export JOYOMNI_OUTPUT_QUALITY="${JOYOMNI_OUTPUT_QUALITY:-92}"
+export JOYOMNI_OUTPUT_QUALITY="${JOYOMNI_OUTPUT_QUALITY:-95}"
 export JOYOMNI_PRESERVE_BACKGROUND="${JOYOMNI_PRESERVE_BACKGROUND:-0}"
-export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-1024}"
+export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-768}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-qwen}"
@@ -98,10 +98,10 @@ python xvideo/serving/serve_joyomni_streaming.py \
   --vae-decode-device "$DEVICE" \
   --vae-pseudo-device "$DEVICE" \
   --postprocess-device "$DEVICE" \
-  --width "${JOYOMNI_WIDTH:-1248}" --height "${JOYOMNI_HEIGHT:-720}" \
-  --fps "${JOYOMNI_FPS:-16}" \
-  --output-quality "${JOYOMNI_OUTPUT_QUALITY:-92}" \
-  --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-30}" \
+  --width "${JOYOMNI_WIDTH:-840}" --height "${JOYOMNI_HEIGHT:-480}" \
+  --fps "${JOYOMNI_FPS:-20}" \
+  --output-quality "${JOYOMNI_OUTPUT_QUALITY:-95}" \
+  --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-15}" \
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
   --host "$HOST" --port "$PORT" \
   "$@"
