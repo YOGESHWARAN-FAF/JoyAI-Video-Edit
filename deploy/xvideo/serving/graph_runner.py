@@ -163,13 +163,15 @@ class StreamingGraphRunner:
             run_commit()
             return lat32
 
+        capture_stream = torch.cuda.Stream(device=self.device)
         try:
-            run_full()
-            torch.cuda.synchronize(self.device)
-            g = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(g, pool=mem_pool, capture_error_mode="thread_local"):
-                self.out_latents = run_full()
-            self.full_graph = g
+            with torch.cuda.stream(capture_stream):
+                run_full()
+                capture_stream.synchronize()
+                g = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(g, stream=capture_stream, pool=mem_pool, capture_error_mode="thread_local"):
+                    self.out_latents = run_full()
+                self.full_graph = g
         finally:
             tf._graph_kv_assembler = None
             tf._graph_kv_writer = None

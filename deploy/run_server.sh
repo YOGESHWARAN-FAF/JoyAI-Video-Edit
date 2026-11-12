@@ -68,7 +68,7 @@ export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-768}"
 export JOYOMNI_STUDIO_WHITE="${JOYOMNI_STUDIO_WHITE:-1}"
 export JOYOMNI_ROI_MODE="${JOYOMNI_ROI_MODE:-1}"
 export JOYOMNI_ROI_WIDTH="${JOYOMNI_ROI_WIDTH:-576}"
-export JOYOMNI_ROI_HEIGHT="${JOYOMNI_ROI_HEIGHT:-768}"
+export JOYOMNI_ROI_HEIGHT="${JOYOMNI_ROI_HEIGHT:-720}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-qwen}"
@@ -110,6 +110,6 @@ python xvideo/serving/serve_joyomni_streaming.py \
   --studio-white \
   --roi-mode \
   --roi-width "${JOYOMNI_ROI_WIDTH:-576}" \
-  --roi-height "${JOYOMNI_ROI_HEIGHT:-768}" \
+  --roi-height "${JOYOMNI_ROI_HEIGHT:-720}" \
   --host "$HOST" --port "$PORT" \
   "$@"

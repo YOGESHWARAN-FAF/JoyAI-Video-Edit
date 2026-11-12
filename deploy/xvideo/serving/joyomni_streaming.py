@@ -484,7 +484,7 @@ class JoyOmniV2VStreamingSession:
         self.ref_image = ref_image.convert("RGB") if ref_image is not None else None
         self.ref_image_latent: torch.Tensor | None = None
         self.device = self.pipeline.transformer.device
-        self.generator = torch.Generator(device=self.device).manual_seed(settings.seed)
+        self.generator = torch.Generator(device="cpu").manual_seed(settings.seed)
 
         self._prev_static_gray: np.ndarray | None = None
         self._static_anchor_id: int | None = None
@@ -506,12 +506,20 @@ class JoyOmniV2VStreamingSession:
         self.latent_channels = int(self.pipeline.vae.config.latent_channels)
         self.roi_mode = bool(settings.roi_mode)
         self.studio_white = bool(settings.studio_white)
-        self.dit_w = settings.roi_width if self.roi_mode else settings.width
-        self.dit_h = settings.roi_height if self.roi_mode else settings.height
 
         _stem = self.pipeline.vae.stem
-        assert self.dit_h % (_stem.stride * 8) == 0 and self.dit_w % (_stem.stride * 8) == 0, (
-            f"session DiT size must be a multiple of {_stem.stride * 8}, got {self.dit_w}x{self.dit_h}"
+        _align = _stem.stride * 8
+        if self.roi_mode:
+            target_roi_h = min(settings.roi_height, settings.height)
+            target_roi_w = min(settings.roi_width, settings.width)
+            self.dit_h = max(_align, (target_roi_h // _align) * _align)
+            self.dit_w = max(_align, (target_roi_w // _align) * _align)
+        else:
+            self.dit_w = settings.width
+            self.dit_h = settings.height
+
+        assert self.dit_h % _align == 0 and self.dit_w % _align == 0, (
+            f"session DiT size must be a multiple of {_align}, got {self.dit_w}x{self.dit_h}"
         )
         self.latent_h = self.dit_h * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
         self.latent_w = self.dit_w * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
@@ -634,7 +642,7 @@ class JoyOmniV2VStreamingSession:
         drain_results: bool = True,
     ) -> list[StreamingChunkResult]:
         self._raise_worker_error_if_needed()
-        frame = self._resize_frame(frame)
+        frame = self._resize_canvas_frame(frame)
         meta = frame_meta or {"seq": self.chunk_idx + len(self.pending_frames) + 1, "t_capture_ms": time.time() * 1000.0}
 
         crop_box = None
@@ -1017,12 +1025,12 @@ class JoyOmniV2VStreamingSession:
         frozen_anchor_id: int | None = None,
     ) -> torch.Tensor:
         noise_shape = (1, self.latent_channels, self.chunk_size, self.latent_h, self.latent_w)
-        current_chunk_latents = randn_tensor(
+        current_chunk_latents = torch.randn(
             noise_shape,
             generator=self.generator,
-            device=self.device,
+            device="cpu",
             dtype=self.target_dtype,
-        )
+        ).to(device=self.device)
 
         total_latent_frames = chunk_idx + 1
         chunk_window = self.pipeline._get_chunk_window(
@@ -1978,15 +1986,34 @@ class JoyOmniV2VStreamingSession:
         )
         return window["selected_chunk_ids"]
 
-    def _resize_frame(self, frame: Image.Image) -> Image.Image:
+    def _resize_canvas_frame(self, frame: Image.Image) -> Image.Image:
         frame = frame.convert("RGB")
         if frame.size == (self.settings.width, self.settings.height):
             return frame
         resampling = getattr(Image, "Resampling", Image).BICUBIC
         return frame.resize((self.settings.width, self.settings.height), resampling)
 
-    def _frames_to_tensor(self, frames: list[Image.Image]) -> torch.Tensor:
-        arrays = [np.asarray(self._resize_frame(frame), dtype=np.uint8) for frame in frames]
+    def _resize_frame(self, frame: Image.Image, target_size: tuple[int, int] | None = None) -> Image.Image:
+        target_wh = target_size or (self.dit_w, self.dit_h)
+        frame = frame.convert("RGB")
+        if frame.size == target_wh:
+            return frame
+        resampling = getattr(Image, "Resampling", Image).BICUBIC
+        return frame.resize(target_wh, resampling)
+
+    def _frames_to_tensor(
+        self,
+        frames: list[Image.Image],
+        target_size: tuple[int, int] | None = None,
+    ) -> torch.Tensor:
+        target_wh = target_size or (self.dit_w, self.dit_h)
+        resampling = getattr(Image, "Resampling", Image).BICUBIC
+        arrays = []
+        for f in frames:
+            f = f.convert("RGB")
+            if f.size != target_wh:
+                f = f.resize(target_wh, resampling)
+            arrays.append(np.asarray(f, dtype=np.uint8))
         u8 = torch.from_numpy(np.stack(arrays, axis=0))
         if torch.cuda.is_available():
             encode_device = _module_device(self.pipeline.vae)

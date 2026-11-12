@@ -20,11 +20,11 @@ class PersonRoIManager:
     def __init__(
         self,
         target_w: int = 576,
-        target_h: int = 768,
+        target_h: int = 720,
         ema_alpha: float = 0.15,
-        align: int = 32,
+        align: int = 24,
     ) -> None:
-        # Ensure target dimensions are strictly divisible by align (32 for Wan2.1 VAE + DiT)
+        # Ensure target dimensions are strictly divisible by align (24 for Wan2.1 VAE + DiT)
         self.target_w = max(align, int(round(target_w / align)) * align)
         self.target_h = max(align, int(round(target_h / align)) * align)
         self.ema_alpha = float(ema_alpha)
@@ -122,3 +122,4 @@ class PersonRoIManager:
 
     def get_last_box(self) -> tuple[int, int, int, int] | None:
         return self._last_crop_box
+

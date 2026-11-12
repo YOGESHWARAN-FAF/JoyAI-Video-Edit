@@ -120,25 +120,18 @@ class WhiteStudioCompositor:
             # Resize patch to match crop_box if needed
             if (patch_h != actual_h or patch_w != actual_w) and actual_h > 0 and actual_w > 0:
                 flat_p = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, patch_h, patch_w)
-                flat_a = alpha.permute(0, 2, 1, 3, 4).reshape(b * t, 1, patch_h, patch_w)
                 resized_p = F.interpolate(flat_p, size=(actual_h, actual_w), mode="bilinear", align_corners=False)
-                resized_a = F.interpolate(flat_a, size=(actual_h, actual_w), mode="bilinear", align_corners=False)
                 p_slice = resized_p.reshape(b, t, c, actual_h, actual_w).permute(0, 2, 1, 3, 4)
-                a_slice = resized_a.reshape(b, t, 1, actual_h, actual_w).permute(0, 2, 1, 3, 4)
             else:
                 p_slice = norm_pixels[:, :, :, :actual_h, :actual_w]
-                a_slice = alpha[:, :, :, :actual_h, :actual_w]
 
-            # Soft boundary feathering along RoI patch border to prevent harsh box cut lines
+            # Soft boundary feathering along left/right edges to smoothly fade into studio white with no seam
+            feather_px = min(24, max(4, actual_w // 16))
             edge_x = torch.linspace(0.0, 1.0, actual_w, device=norm_pixels.device, dtype=norm_pixels.dtype)
-            edge_y = torch.linspace(0.0, 1.0, actual_h, device=norm_pixels.device, dtype=norm_pixels.dtype)
-            edge_ramp_x = torch.clamp(torch.min(edge_x, 1.0 - edge_x) * 15.0, 0.0, 1.0).view(1, 1, 1, 1, actual_w)
-            edge_ramp_y = torch.clamp(torch.min(edge_y, 1.0 - edge_y) * 15.0, 0.0, 1.0).view(1, 1, 1, actual_h, 1)
-            border_ramp = edge_ramp_x * edge_ramp_y
-            a_slice = a_slice * border_ramp
+            border_ramp_x = torch.clamp(torch.min(edge_x, 1.0 - edge_x) * (actual_w / feather_px), 0.0, 1.0).view(1, 1, 1, 1, actual_w)
 
             # Blend person patch onto canvas
-            blended_slice = a_slice * p_slice + (1.0 - a_slice) * bg_val
+            blended_slice = border_ramp_x * p_slice + (1.0 - border_ramp_x) * bg_val
             full_canvas[:, :, :, y1:y1 + actual_h, x1:x1 + actual_w] = blended_slice
         else:
             # Centered placement
@@ -150,3 +143,4 @@ class WhiteStudioCompositor:
             full_canvas[:, :, :, y1:y1 + actual_h, x1:x1 + actual_w] = blended_slice[:, :, :, :actual_h, :actual_w]
 
         return torch.clamp(full_canvas, 0.0, 1.0)
+
