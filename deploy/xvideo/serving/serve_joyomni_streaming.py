@@ -2492,12 +2492,49 @@ def parse_args() -> argparse.Namespace:
         parser.error(str(exc))
     return args
 
+def _resolve_available_port(host: str, desired_port: int) -> int:
+    import socket
+    import subprocess
+    import time
+
+    def _can_bind(p: int) -> bool:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, p))
+            s.close()
+            return True
+        except OSError:
+            return False
+
+    if _can_bind(desired_port):
+        return desired_port
+
+    # Attempt to terminate stale process on desired_port
+    try:
+        subprocess.run(["fuser", "-k", f"{desired_port}/tcp"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+        if _can_bind(desired_port):
+            return desired_port
+    except Exception:
+        pass
+
+    # If still occupied, auto-fallback to next free port
+    for p in range(desired_port + 1, desired_port + 20):
+        if _can_bind(p):
+            print(f"#####[PORT] Port {desired_port} is busy. Automatically switching to free port {p}!", flush=True)
+            return p
+
+    return desired_port
+
+
 def main() -> None:
     import logging
     logging.getLogger("torch.utils._sympy.interp").setLevel(logging.ERROR)
     from xvideo.inductor_autotune_fix import install as _install_autotune_fix
     _install_autotune_fix()
     args = parse_args()
+    args.port = _resolve_available_port(args.host, args.port)
     # JOYOMNI_VRAM_CAP_GB (testing): cap the allocator to emulate a smaller card.
     from xvideo.lowvram import apply_vram_cap_for_testing
     apply_vram_cap_for_testing(args.device)
