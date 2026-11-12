@@ -4,17 +4,38 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 JOYOMNI_CONDA_SH="${JOYOMNI_CONDA_SH:-}"
-JOYOMNI_CONDA_ENV="${JOYOMNI_CONDA_ENV:-}"
-if [ -n "$JOYOMNI_CONDA_ENV" ]; then
-  : "${NVCC_PREPEND_FLAGS:=}" "${NVCC_APPEND_FLAGS:=}"
-  export NVCC_PREPEND_FLAGS NVCC_APPEND_FLAGS
-  if [ -n "$JOYOMNI_CONDA_SH" ]; then
-    # shellcheck disable=SC1090
-    source "$JOYOMNI_CONDA_SH"
-  fi
-  while [ "${CONDA_SHLVL:-0}" -gt 0 ]; do conda deactivate; done
-  conda activate "$JOYOMNI_CONDA_ENV"
+JOYOMNI_CONDA_ENV="${JOYOMNI_CONDA_ENV:-joyai-video-edit}"
+
+if [ -z "$JOYOMNI_CONDA_SH" ]; then
+  for cand_sh in \
+    "$HOME/miniconda3/etc/profile.d/conda.sh" \
+    "$HOME/anaconda3/etc/profile.d/conda.sh" \
+    "/opt/conda/etc/profile.d/conda.sh"; do
+    if [ -f "$cand_sh" ]; then
+      JOYOMNI_CONDA_SH="$cand_sh"
+      break
+    fi
+  done
+fi
+
+if [ -n "$JOYOMNI_CONDA_SH" ] && [ -f "$JOYOMNI_CONDA_SH" ]; then
+  # shellcheck disable=SC1090
+  source "$JOYOMNI_CONDA_SH"
+  conda activate "$JOYOMNI_CONDA_ENV" 2>/dev/null || true
   hash -r
+fi
+
+PYTHON_BIN="python"
+if ! "$PYTHON_BIN" -c "import torch" &>/dev/null; then
+  for cand_py in \
+    "$HOME/miniconda3/envs/$JOYOMNI_CONDA_ENV/bin/python" \
+    "$HOME/anaconda3/envs/$JOYOMNI_CONDA_ENV/bin/python" \
+    "/opt/conda/envs/$JOYOMNI_CONDA_ENV/bin/python"; do
+    if [ -x "$cand_py" ]; then
+      PYTHON_BIN="$cand_py"
+      break
+    fi
+  done
 fi
 
 cd "$HERE"
@@ -91,7 +112,7 @@ DEVICE="${JOYOMNI_DEVICE:-cuda:0}"
 HOST="${JOYOMNI_HOST:-0.0.0.0}"
 PORT="${JOYOMNI_PORT:-8080}"
 
-python xvideo/serving/serve_joyomni_streaming.py \
+"$PYTHON_BIN" xvideo/serving/serve_joyomni_streaming.py \
   --dit-ckpt          "$DIT_CKPT" \
   --vae-ckpt          "$VAE_CKPT" \
   --text-encoder-ckpt "$TE_CKPT" \
