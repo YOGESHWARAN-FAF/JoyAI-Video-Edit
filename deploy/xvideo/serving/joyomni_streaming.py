@@ -700,6 +700,8 @@ class JoyOmniV2VStreamingSession:
         self.streaming_cond_embeds = None
         self.ref_image_latent = None
         self._pseudo_latent = None
+        if self.studio_compositor is not None:
+            self.studio_compositor.reset_temporal_state()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

@@ -104,8 +104,9 @@ export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-768}"
 export JOYOMNI_STUDIO_WHITE="${JOYOMNI_STUDIO_WHITE:-1}"
 export JOYOMNI_STUDIO_INPUT_WHITEN="${JOYOMNI_STUDIO_INPUT_WHITEN:-1}"
 export JOYOMNI_DETECTION_STRIDE="${JOYOMNI_DETECTION_STRIDE:-6}"
-export JOYOMNI_ROI_MODE="${JOYOMNI_ROI_MODE:-1}"
-export JOYOMNI_ROI_WIDTH="${JOYOMNI_ROI_WIDTH:-576}"
+# Default ROI mode to 0 (Full Stream 1280x720) to eliminate all side/arm cuts. Set to 1 for wide 1008x720 RoI.
+export JOYOMNI_ROI_MODE="${JOYOMNI_ROI_MODE:-0}"
+export JOYOMNI_ROI_WIDTH="${JOYOMNI_ROI_WIDTH:-1008}"
 export JOYOMNI_ROI_HEIGHT="${JOYOMNI_ROI_HEIGHT:-720}"
 
 # Local Qwen PE; select api for an external PE endpoint.
@@ -121,7 +122,7 @@ mkdir -p "$CKPT_ROOT"
 
 # Pre-cache LRASPP studio segmenter model (12.5 MB) for zero-latency GPU background removal
 LRASPP_CKPT="$CKPT_ROOT/lraspp_mobilenet_v3_large-d234d4ea.pth"
-if [ ! -f "$LRASPP_CKPT" ]; then
+if [ ! -f "$LRASPP_CKPT" ] || [ "$(wc -c < "$LRASPP_CKPT" 2>/dev/null || echo 0)" -lt 10000000 ]; then
   echo "#####[PREFLIGHT] Pre-caching studio segmenter weights (12.5 MB)..."
   curl -sSL -H "User-Agent: Mozilla/5.0" "https://download.pytorch.org/models/lraspp_mobilenet_v3_large-d234d4ea.pth" -o "$LRASPP_CKPT" 2>/dev/null || true
 fi
@@ -136,6 +137,11 @@ PERSON_ONNX="${JOYOMNI_PERSON_ONNX:-$CKPT_ROOT/yolov8n.onnx}"
 DEVICE="${JOYOMNI_DEVICE:-cuda:0}"
 HOST="${JOYOMNI_HOST:-0.0.0.0}"
 PORT="${JOYOMNI_PORT:-8080}"
+
+ROI_ARGS=()
+if [ "$JOYOMNI_ROI_MODE" = "1" ]; then
+  ROI_ARGS=(--roi-mode --roi-width "${JOYOMNI_ROI_WIDTH:-1008}" --roi-height "${JOYOMNI_ROI_HEIGHT:-720}")
+fi
 
 "$PYTHON_BIN" xvideo/serving/serve_joyomni_streaming.py \
   --dit-ckpt          "$DIT_CKPT" \
@@ -156,8 +162,6 @@ PORT="${JOYOMNI_PORT:-8080}"
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
   --detection-stride "${JOYOMNI_DETECTION_STRIDE:-6}" \
   --studio-white \
-  --roi-mode \
-  --roi-width "${JOYOMNI_ROI_WIDTH:-576}" \
-  --roi-height "${JOYOMNI_ROI_HEIGHT:-720}" \
+  "${ROI_ARGS[@]}" \
   --host "$HOST" --port "$PORT" \
   "$@"
