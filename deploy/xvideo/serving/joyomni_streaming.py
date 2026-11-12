@@ -1722,9 +1722,20 @@ class JoyOmniV2VStreamingSession:
             source_window = torch.cat([prev, new_frames], dim=2)
             if profile is not None:
                 self._timer_record(profile, "frames_to_tensor_s", started)
-        self.prev_source_frame = source_window[:, :, -1:].detach().clone()
         encode_device = _module_device(self.pipeline.vae)
         source_window = source_window.to(device=encode_device, dtype=self.target_dtype)
+
+        # White Studio input background isolation: streams only person + outfit on white, eliminating background GPU FLOPs
+        input_whiten = os.environ.get("JOYOMNI_STUDIO_INPUT_WHITEN", "1") == "1"
+        if self.studio_compositor is not None and getattr(self, "studio_white", False) and input_whiten:
+            try:
+                norm_src = (source_window.to(dtype=torch.float32) / 2.0 + 0.5).clamp(0.0, 1.0)
+                whited_src = self.studio_compositor.whiten_background(norm_src)
+                source_window = (whited_src * 2.0 - 1.0).to(dtype=self.target_dtype)
+            except Exception as _w_exc:
+                pass
+
+        self.prev_source_frame = source_window[:, :, -1:].detach().clone()
 
         _vc = _vae_compile_module()
         _vc.maybe_setup_encode(self.pipeline.vae)
@@ -2007,17 +2018,16 @@ class JoyOmniV2VStreamingSession:
         target_size: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         target_wh = target_size or (self.dit_w, self.dit_h)
-        resampling = getattr(Image, "Resampling", Image).BICUBIC
-        arrays = []
-        for f in frames:
-            f = f.convert("RGB")
-            if f.size != target_wh:
-                f = f.resize(target_wh, resampling)
-            arrays.append(np.asarray(f, dtype=np.uint8))
+        arrays = [np.asarray(f if f.mode == "RGB" else f.convert("RGB"), dtype=np.uint8) for f in frames]
         u8 = torch.from_numpy(np.stack(arrays, axis=0))
         if torch.cuda.is_available():
             encode_device = _module_device(self.pipeline.vae)
             if encode_device.type == "cuda":
                 u8 = u8.to(encode_device, non_blocking=True)
         pixel = rearrange(u8, "t h w c -> 1 c t h w").to(torch.float32)
+        if pixel.shape[-1] != target_wh[0] or pixel.shape[-2] != target_wh[1]:
+            b, c, t, cur_h, cur_w = pixel.shape
+            flat = pixel.permute(0, 2, 1, 3, 4).reshape(b * t, c, cur_h, cur_w)
+            resized = F.interpolate(flat, size=(target_wh[1], target_wh[0]), mode="bilinear", align_corners=False)
+            pixel = resized.reshape(b, t, c, target_wh[1], target_wh[0]).permute(0, 2, 1, 3, 4)
         return pixel / 127.5 - 1.0
