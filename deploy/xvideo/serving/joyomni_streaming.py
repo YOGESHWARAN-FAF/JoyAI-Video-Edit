@@ -1809,8 +1809,8 @@ class JoyOmniV2VStreamingSession:
         norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
 
         # High-Fidelity Background & Detail Preservation (Decart-grade photorealism)
-        # Keeps walls, room, and untouched areas 100% photorealistic from the real camera feed
-        preserve_bg = os.environ.get("JOYOMNI_PRESERVE_BACKGROUND", "1") == "1"
+        # Defaults to 0 so original t-shirt layout, collars, and bare arm cutoff lines are NOT blended over new garments
+        preserve_bg = os.environ.get("JOYOMNI_PRESERVE_BACKGROUND", "0") == "1"
         if preserve_bg and source_frames is not None and len(source_frames) > 0:
             try:
                 src_tensor = self._frames_to_tensor(source_frames).to(device=post_device, dtype=torch.float32)

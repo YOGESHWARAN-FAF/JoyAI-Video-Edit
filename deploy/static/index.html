@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>JoyAI-Video-Edit</title>
   <style>
     :root {
@@ -21,9 +24,10 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    .topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 16px 28px; }
+    .topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 14px 28px; }
     .topbar .brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
     .topbar .brand { font-size: 18px; font-weight: 760; letter-spacing: .2px; }
+    .topbar .ver-pill { font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(242,100,63,.12); border: 1px solid rgba(242,100,63,.28); border-radius: 999px; padding: 2px 8px; margin-left: 4px; }
     .topbar .tagline { font-size: 13px; color: var(--muted); }
     .lang-seg { margin-left: auto; display: inline-flex; gap: 3px; }
     .lang-seg button { cursor: pointer; font-size: 12px; font-weight: 600; color: #6a6a64; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
@@ -35,9 +39,9 @@
     .vpanel-head .vp-title { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 720; }
     .vpanel-head .vp-title .ico { font-size: 14px; color: var(--accent); }
     .src-controls { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-    .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 14px; background: #0f172a; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 24px rgba(0,0,0,0.45); }
+    .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 14px; background: #000; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 24px rgba(0,0,0,0.45); aspect-ratio: 16 / 9; }
     .media-box img:not([src]) { visibility: hidden; }
-    video, canvas, img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; transition: object-fit 0.2s ease; }
+    .media-box video, .media-box canvas, .media-box img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; transition: object-fit 0.2s ease; }
     .media-box.fit-contain video, .media-box.fit-contain canvas, .media-box.fit-contain img { object-fit: contain; }
     .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: #cfcfca; }
     .overlay .hint { font-size: 13px; color: #9a9a95; max-width: 320px; line-height: 1.5; text-wrap: balance; }
@@ -426,6 +430,7 @@
 <div class="topbar">
   <span class="brand-dot"></span>
   <span class="brand">JoyAI-Video-Edit</span>
+  <span class="ver-pill">v2.5 · Clean UI</span>
   <span class="tagline" data-i18n="tagline">流式视频编辑体验</span>
   <span id="langToggle" class="lang-seg" role="group" aria-label="Language">
     <button type="button" data-lang="zh">中文</button>
@@ -461,7 +466,7 @@
       <span class="src-controls" id="resultControls">
         <button id="btnToggleFit" type="button" class="vp-btn" title="Toggle Fit / Fill View">⛶ <span id="fitBtnText" data-i18n="fill_view">Fill View</span></button>
         <button id="btnToggleTheater" type="button" class="vp-btn" title="Theater / Full View">🗖 <span id="theaterBtnText" data-i18n="full_view">Full View</span></button>
-        <button id="btnDownloadHeader" type="button" class="vp-btn vp-btn-accent" style="display:none;" title="Download Try-On Video">⬇️ <span data-i18n="download">Download</span></button>
+        <button id="btnDownloadHeader" type="button" class="vp-btn vp-btn-accent" title="Download Try-On Video">⬇️ <span data-i18n="download">Download HD</span></button>
       </span>
     </div>
     <div class="media-box fill-view">
@@ -3311,8 +3316,20 @@ function downloadTryOnVideo() {
     showOutputToast(t("toast_done"), 3000);
     return;
   }
-  showOutputToast("Preparing video download...", 3000);
-  window.open("/download_last", "_blank");
+  if (startingRun || sessionGranted) {
+    showOutputToast("Session in progress — stopping and saving video...", 3000);
+    stopActiveRun();
+    setTimeout(() => {
+      if (clientRecordedBlob) {
+        const url = URL.createObjectURL(clientRecordedBlob);
+        triggerBrowserDownload(url, `joyomni_tryon_${Date.now()}.webm`);
+      } else {
+        window.open("/download_last", "_blank");
+      }
+    }, 1200);
+    return;
+  }
+  showOutputToast("Please start a try-on session first to record and download video", 3500);
 }
 
 window.addEventListener("load", () => {

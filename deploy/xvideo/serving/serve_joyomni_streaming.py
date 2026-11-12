@@ -1709,15 +1709,17 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             if not clean_raw or clean_raw == args.prompt:
                                 session_prompt = (
                                     "Change the person's clothes to match the clothing and outfit shown in the reference image. "
-                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, "
-                                    "and fit onto the person's body with high realistic detail. "
+                                    "Completely replace and overwrite all original upper clothing, previous t-shirt layout, inner shirts, collars, and sleeves with the new outfit. "
+                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, and jacket/coat coverage onto the person's body with high realistic detail. "
+                                    "Render clean full sleeves down the arms without any old t-shirt cutoff lines or discoloration. "
                                     "Keep the subject's face, facial features, facial identity, hair, skin tone, and background unchanged."
                                 )
                             else:
                                 protect_clause = (
+                                    "Completely replace and overwrite all original clothing, previous t-shirt layout, collars, and sleeves with the new outfit. "
                                     "Transfer only the clothing, outfit and garment style from the reference image accurately onto the person's body "
-                                    "with realistic fabric detail and fit. Keep the subject's face, facial features, facial identity, "
-                                    "skin tone, hair, head, and the background completely unchanged and identical to the original."
+                                    "with realistic fabric detail and fit. Render seamless sleeves and garment coverage. "
+                                    "Keep the subject's face, facial features, facial identity, skin tone, hair, head, and the background completely unchanged and identical to the original."
                                 )
                                 if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
                                     session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
