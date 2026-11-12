@@ -823,10 +823,14 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 if args.pe_backend == "qwen":
                     from xvideo.serving.pe_qwen import MODEL_ID, MODEL_REVISION, QwenRuntime
                     pe_path = args.pe_ckpt
-                    if not pe_path:
-                        from huggingface_hub import snapshot_download
-                        pe_path = snapshot_download(MODEL_ID, revision=MODEL_REVISION)
-                    runtime.pipeline._pe_qwen = QwenRuntime(pe_path, device=args.device)
+                    if pe_path and not os.path.exists(pe_path):
+                        print(f"#####[PE] Checkpoint '{pe_path}' not found on disk. Skipping local Qwen PE.", flush=True)
+                        pe_path = None
+                    if pe_path:
+                        try:
+                            runtime.pipeline._pe_qwen = QwenRuntime(pe_path, device=args.device)
+                        except Exception as pe_exc:
+                            print(f"#####[PE] Failed to load local Qwen PE ({pe_exc!r}). Continuing without local PE.", flush=True)
                 app.state.runtime = runtime
         return app.state.runtime
 
@@ -2403,7 +2407,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fps", type=int, default=24, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
     parser.add_argument("--use-pe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pe-backend", choices=("qwen", "api", "none"),
-                        default=os.environ.get("JOYOMNI_PE_BACKEND", "qwen"))
+                        default=os.environ.get("JOYOMNI_PE_BACKEND", "none"))
     parser.add_argument("--pe-ckpt", default=os.environ.get("JOYOMNI_PE_CKPT"),
                         help="Local Qwen PE checkpoint directory; otherwise use the pinned Hub model.")
     parser.add_argument("--pe-model", type=str, default=None)

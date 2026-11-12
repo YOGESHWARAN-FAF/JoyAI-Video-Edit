@@ -93,7 +93,7 @@ export JOYOMNI_ROI_WIDTH="${JOYOMNI_ROI_WIDTH:-576}"
 export JOYOMNI_ROI_HEIGHT="${JOYOMNI_ROI_HEIGHT:-720}"
 
 # Local Qwen PE; select api for an external PE endpoint.
-export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-qwen}"
+export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-none}"
 export PE_MODEL="${PE_MODEL:-}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
