@@ -1829,15 +1829,22 @@ class JoyOmniV2VStreamingSession:
             except Exception as _bg_exc:
                 print(f"#####[STREAM] Notice in bg preservation: {_bg_exc!r}", flush=True)
 
-        # Contrast-Adaptive Edge Sharpening (CAS / Unsharp Mask) to counteract VAE low-pass blur
-        # Brings back crisp facial features, hair, eyes, and garment textures
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.35"))
+        # Dual-Scale Contrast-Adaptive Texture Enhancement (DS-CATE)
+        # Scale 1 (5x5): Structural fabric creases, 3D folds, and garment lighting shadows
+        # Scale 2 (3x3): Micro-textile weave, stitching, hair, eyes, and skin details
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.40"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
             reshaped = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
-            blurred = F.avg_pool2d(reshaped, kernel_size=3, stride=1, padding=1)
-            sharpened = torch.clamp(reshaped + sharpness_alpha * (reshaped - blurred), 0.0, 1.0)
+            blurred3 = F.avg_pool2d(reshaped, kernel_size=3, stride=1, padding=1)
+            blurred5 = F.avg_pool2d(reshaped, kernel_size=5, stride=1, padding=2)
+            struct_creases = reshaped - blurred5
+            micro_weave = reshaped - blurred3
+            sharpened = torch.clamp(
+                reshaped + (sharpness_alpha * 0.65) * struct_creases + (sharpness_alpha * 0.45) * micro_weave,
+                0.0, 1.0,
+            )
             frames_u8 = (
                 sharpened.mul(255.0)
                 .round_()

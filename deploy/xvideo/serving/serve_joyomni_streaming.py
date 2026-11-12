@@ -476,20 +476,20 @@ def _full_body_box_ready(box, face_center, image_width, image_height):
         return False
 
     # Face vertical alignment: face center must be located in upper portion of the visible person.
-    # Allows up to 58% of visible_h to comfortably support half-body poses (waist up) and seated users.
-    if fy < visible_top - 0.08 or fy > visible_top + 0.58 * visible_h:
+    # Allows up to 68% of visible_h to comfortably support raised hands, half-body poses, and dynamic movement.
+    if fy < visible_top - 0.12 or fy > visible_top + 0.68 * visible_h:
         return False
 
     # Person height vs face height ratio check:
     # Reject extreme face-only closeups where no body/garment is visible to edit.
     # - Full body (head to toe): ~6.5 to 7.5 heads
     # - Mid body (shirt + half pant): ~3.5 to 5.0 heads
-    # - Half body (full shirt / waist up): ~2.2 to 3.5 heads
-    # - Extreme face closeup: < 1.6 heads
-    # 1.7 * face_pixel_h cleanly separates half-body & mid-body try-on from tight headshots.
+    # - Half body (full shirt / waist up): ~2.0 to 3.5 heads
+    # - Extreme face closeup: < 1.5 heads
+    # 1.5 * face_pixel_h cleanly separates half-body & mid-body try-on from tight headshots.
     face_pixel_h = face_short * min(image_width, image_height)
     visible_pixel_h = visible_h * image_height
-    if visible_pixel_h < 1.7 * face_pixel_h:
+    if visible_pixel_h < 1.5 * face_pixel_h:
         return False
 
     return True
@@ -1708,21 +1708,31 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             clean_raw = raw_session_prompt.strip()
                             if not clean_raw or clean_raw == args.prompt:
                                 session_prompt = (
-                                    "Change the person's clothes to match the clothing and outfit shown in the reference image. "
-                                    "Completely replace and overwrite all original upper clothing, previous t-shirt layout, inner shirts, collars, and sleeves with the new outfit. "
-                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, and jacket/coat coverage onto the person's body with high realistic detail. "
-                                    "Render clean full sleeves down the arms without any old t-shirt cutoff lines or discoloration. "
-                                    "Keep the subject's face, facial features, facial identity, hair, skin tone, and background unchanged."
+                                    "Photorealistic virtual try-on: Change the person's clothes to match the clothing and outfit shown in the reference image. "
+                                    "Completely replace and overwrite all original clothing, torso layout, collars, and sleeves with the new outfit. "
+                                    "Accurately replicate the exact dress style, color, texture, fabric pattern, collar, sleeves, and garment structure with high realistic detail. "
+                                    "Render natural fabric drape, dynamic cloth wrinkles, soft realistic folds, authentic textile texture, and natural seams that naturally deform and crease with body movement. "
+                                    "Ensure realistic sleeve articulation, authentic collar depth, and natural inner shirt shading with 3D depth and environmental lighting. "
+                                    "For half-body and full-body views, cleanly fit the garments to the torso, waist, arms, and legs with natural proportions, avoiding flat, rigid, or cartoonish textures. "
+                                    "Keep the subject's face, facial features, facial identity, hair, skin tone, hands, and the background completely unchanged and identical."
                                 )
                             else:
                                 protect_clause = (
-                                    "Completely replace and overwrite all original clothing, previous t-shirt layout, collars, and sleeves with the new outfit. "
-                                    "Transfer only the clothing, outfit and garment style from the reference image accurately onto the person's body "
-                                    "with realistic fabric detail and fit. Render seamless sleeves and garment coverage. "
-                                    "Keep the subject's face, facial features, facial identity, skin tone, hair, head, and the background completely unchanged and identical to the original."
+                                    "Photorealistic virtual try-on: Completely replace and overwrite all previous clothing, torso layout, collars, and sleeves with the new outfit. "
+                                    "Transfer the clothing, outfit, and garment style from the reference image onto the person's body with authentic fabric texture, natural drape, dynamic cloth wrinkles, and realistic 3D volume. "
+                                    "For half-body and full-body poses, fit the garments cleanly to the torso, waist, arms, and legs with natural textile folds and realistic seams. "
+                                    "Keep the subject's face, facial features, facial identity, skin tone, hair, head, hands, and the surrounding background completely unchanged and identical to the original."
                                 )
                                 if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
                                     session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
+                        elif any(w in session_prompt.lower() for w in ("wear", "cloth", "dress", "jacket", "suit", "shirt", "pant", "hoodie", "coat", "outfit", "tshirt")):
+                            if "face" not in session_prompt.lower():
+                                session_prompt = (
+                                    f"{session_prompt.rstrip('. ')}. "
+                                    "Photorealistic clothing with natural fabric drape, realistic cloth wrinkles and dynamic folds matching body movement. "
+                                    "Clean fit for half-body and full-body view, with authentic textile texture and realistic seams. "
+                                    "Keep the subject's face, facial features, facial identity, hair, skin tone, hands, and background unchanged."
+                                )
                         kv_reset_frames = max(0, int(payload.get("kv_reset_frames", args.kv_reset_frames)))
                         output_quality = max(1, min(100, int(payload.get("output_quality", output_quality))))
                         lossless_mode = str(payload.get("source", "")) == "file"
@@ -2169,8 +2179,6 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                 print(f"#####[PERSON-GATE] {gate_state['hold_reason']} for {gate_state['absent']} frames -> black-hold", flush=True)
                         if gate_state.get("absent_hold"):
                             return ("__no_person__", gate_state.get("hold_reason", "no_person"))
-                        if full_body_detection and not _present:
-                            return ("__frame_skipped__",)
 
                         if _fresh:
                             _n = _count_faces_from(
