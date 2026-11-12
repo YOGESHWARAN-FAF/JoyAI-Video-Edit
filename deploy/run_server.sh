@@ -71,6 +71,20 @@ if command -v nvidia-smi &>/dev/null; then
   set -eo pipefail
 fi
 
+# Pre-flight port check: terminate any stale process holding PORT (8080)
+PORT="${JOYOMNI_PORT:-8080}"
+if command -v fuser &>/dev/null; then
+  fuser -k "${PORT}/tcp" 2>/dev/null || true
+elif command -v lsof &>/dev/null; then
+  lsof -ti :"${PORT}" | xargs kill -9 2>/dev/null || true
+elif command -v ss &>/dev/null; then
+  STALE_PID=$(ss -lptn "sport = :$PORT" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -n1 || true)
+  if [ -n "$STALE_PID" ]; then
+    kill -9 "$STALE_PID" 2>/dev/null || true
+  fi
+fi
+sleep 0.5
+
 export PYTHONUNBUFFERED=1
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 export PYTHONPATH="$HERE"
