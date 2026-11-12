@@ -51,6 +51,7 @@ if command -v nvidia-smi &>/dev/null; then
 fi
 
 export PYTHONUNBUFFERED=1
+export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 export PYTHONPATH="$HERE"
 
 export JOYOMNI_FP8_IMG="${JOYOMNI_FP8_IMG:-1}"
