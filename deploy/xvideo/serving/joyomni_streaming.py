@@ -77,7 +77,7 @@ def _profile_timer_elapsed(started: _ProfileTimer | float) -> float:
 @dataclass(frozen=True)
 class StreamingSettings:
     height: int = 1080
-    width: int = 600
+    width: int = 720
     num_inference_steps: int = 1
     seed: int = 42
     max_sequence_length: int | None = None
@@ -241,7 +241,7 @@ class JoyOmniRuntime:
         postprocess_device: str | torch.device | None = None,
         seed: int = 42,
         warmup_height: int = 1080,
-        warmup_width: int = 600,
+        warmup_width: int = 720,
     ) -> "JoyOmniRuntime":
         device_obj = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         encode_device_arg = vae_encode_device if vae_encode_device is not None else vae_device
@@ -410,7 +410,7 @@ class JoyOmniRuntime:
         self,
         *,
         height: int = 1080,
-        width: int = 600,
+        width: int = 720,
         num_chunks: int = _FULL_WARMUP_CHUNKS,
     ) -> None:
         t0 = time.time()

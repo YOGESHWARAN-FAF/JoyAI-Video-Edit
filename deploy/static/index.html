@@ -39,10 +39,53 @@
     .vpanel-head .vp-title { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 720; }
     .vpanel-head .vp-title .ico { font-size: 14px; color: var(--accent); }
     .src-controls { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-    .media-box { position: relative; flex: 1 1 auto; min-height: 0; margin: 0 12px 12px; overflow: hidden; border-radius: 14px; background: #000; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 24px rgba(0,0,0,0.45); aspect-ratio: var(--media-aspect, 9 / 16); max-height: 75vh; }
-    .portrait-mode .media-box, .media-box.portrait-view { aspect-ratio: 9 / 16; max-height: 75vh; }
+    .media-box {
+      position: relative;
+      margin: 0 auto 12px;
+      overflow: hidden;
+      border-radius: 14px;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 0 24px rgba(0,0,0,0.45);
+      aspect-ratio: var(--media-aspect, 2 / 3);
+      height: 60vh;
+      max-height: calc(100vh - 240px);
+      width: auto;
+      max-width: 100%;
+    }
+    .portrait-mode .media-box, .media-box.portrait-view {
+      aspect-ratio: var(--media-aspect, 2 / 3);
+      height: 60vh;
+      max-height: calc(100vh - 240px);
+      width: auto;
+      max-width: 100%;
+    }
+    .portrait-mode #cropMask { display: none !important; }
     .media-box img:not([src]) { visibility: hidden; }
-    .media-box video, .media-box canvas, .media-box img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; background: transparent; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; transition: object-fit 0.2s ease; }
+    .media-box video, .media-box canvas, .media-box img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+      object-position: center;
+      background: transparent;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      transition: object-fit 0.2s ease;
+    }
+    .media-box #camera {
+      object-fit: cover;
+      object-position: center;
+    }
+    .media-box.fill-view img,
+    .media-box.fill-view canvas,
+    .media-box.fill-view video:not(#camera) {
+      object-fit: contain;
+    }
     .media-box.fit-contain video, .media-box.fit-contain canvas, .media-box.fit-contain img { object-fit: contain; }
     .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; color: #cfcfca; }
     .overlay .hint { font-size: 13px; color: #9a9a95; max-width: 320px; line-height: 1.5; text-wrap: balance; }
@@ -601,7 +644,7 @@ const sessionConfig = {
 };
 
 function updateMediaAspect() {
-  const w = Number(sessionConfig.width) || 600;
+  const w = Number(sessionConfig.width) || 720;
   const h = Number(sessionConfig.height) || 1080;
   const ar = `${w} / ${h}`;
   document.documentElement.style.setProperty("--media-aspect", ar);
@@ -944,7 +987,7 @@ if (window.ResizeObserver && camera) {
 // the camera track rotates with the device; re-pick orientation while idle
 camera.addEventListener("resize", () => {
   if (usingVideoFile || startingRun || sessionGranted) return;
-  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 720;
   const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
   if (defH > defW) return;
   const vw = camera.videoWidth, vh = camera.videoHeight;
@@ -1080,7 +1123,7 @@ function currentOrientation() {
   return h > w ? "portrait" : "landscape";
 }
 function defaultCameraOrientation() {
-  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 720;
   const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
   if (defH > defW) return "portrait";
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
@@ -1088,7 +1131,7 @@ function defaultCameraOrientation() {
   return (isMobile || portraitViewport) ? "portrait" : "landscape";
 }
 function orientDims(o) {
-  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 720;
   const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
   if (defH > defW) {
     return { width: defW, height: defH };
@@ -1386,7 +1429,7 @@ function displayOutputFrame(item) {
       outputCanvas.style.display = "";
       outputImg.style.display = "none";
     }
-    const w = item.bmp.width || sessionConfig.width || 600;
+    const w = item.bmp.width || sessionConfig.width || 720;
     const h = item.bmp.height || sessionConfig.height || 1080;
     if (outputCanvas.width !== w || outputCanvas.height !== h) {
       outputCanvas.width = w;
@@ -1410,7 +1453,7 @@ function displayOutputFrame(item) {
     outputImg.onload = outputImg.onerror = function() {
       if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
       outputImg.onload = outputImg.onerror = null;
-      const nw = outputImg.naturalWidth || sessionConfig.width || 600;
+      const nw = outputImg.naturalWidth || sessionConfig.width || 720;
       const nh = outputImg.naturalHeight || sessionConfig.height || 1080;
       if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
         outputCanvas.width = nw;
@@ -1831,7 +1874,7 @@ async function ensureCamera() {
   cameraTrackFps = settings.frameRate || null;
   const camVW = camera.videoWidth || 0;
   const camVH = camera.videoHeight || 0;
-  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 720;
   const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
   if (defH <= defW && camVW && camVH) {
     const want = camVH > camVW ? "portrait" : "landscape";
@@ -2799,7 +2842,7 @@ function handleVideoFileChange(event) {
   camera.onloadedmetadata = () => {
     const vw = camera.videoWidth || 0;
     const vh = camera.videoHeight || 0;
-    const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+    const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 720;
     const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
     if (defH <= defW && vw > 0 && vh > 0) {
       const want = vh > vw ? "portrait" : "landscape";

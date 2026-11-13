@@ -2400,7 +2400,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--postprocess-device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--height", type=int, default=int(os.environ.get("JOYOMNI_HEIGHT", "1080")))
-    parser.add_argument("--width", type=int, default=int(os.environ.get("JOYOMNI_WIDTH", "600")))
+    parser.add_argument("--width", type=int, default=int(os.environ.get("JOYOMNI_WIDTH", "720")))
     parser.add_argument("--num-inference-steps", type=int, default=1)
     parser.add_argument("--fps", type=int, default=int(os.environ.get("JOYOMNI_FPS", "24")), help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
     parser.add_argument("--use-pe", action=argparse.BooleanOptionalAction, default=True)
