@@ -1860,24 +1860,19 @@ class JoyOmniV2VStreamingSession:
                         if fb is not None:
                             fx, fy, fw, fh = fb
                             cx = float(fx + fw * 0.5) * w
-                            cy = float(fy + fh * 0.42) * h
-                            rx = float(fw * 0.55) * w
-                            ry = float(fh * 0.48) * h
+                            cy = float(fy + fh * 0.43) * h
+                            rx = float(fw * 0.52) * w
+                            ry = float(fh * 0.46) * h
 
                             y_coords = torch.arange(h, device=post_device, dtype=torch.float32).view(1, 1, h, 1)
                             x_coords = torch.arange(w, device=post_device, dtype=torch.float32).view(1, 1, 1, w)
                             dist_sq = ((x_coords - cx) / max(1.0, rx)) ** 2 + ((y_coords - cy) / max(1.0, ry)) ** 2
 
-                            # Smooth Hermite transition inside face (1.0 inside face -> 0.0 at outer face boundary)
+                            # Smooth Hermite transition inside face (1.0 inside face -> 0.0 at outer jaw/hair boundary)
+                            # The curved ellipse naturally follows the jawline whether tilted or upright,
+                            # terminating smoothly at the chin without cutting across the neck or collar.
                             face_alpha = torch.clamp((1.0 - dist_sq) / 0.25, 0.0, 1.0)
                             face_alpha = face_alpha * face_alpha * (3.0 - 2.0 * face_alpha)
-
-                            # Strict collar boundary cutoff: never blend past chin (terminates at chin/upper jaw).
-                            # This guarantees 100% of the new garment collar, neckline, lapels, and chest are untouched.
-                            chin_y = float(fy + fh * 0.98) * h
-                            collar_cut = torch.clamp((chin_y + 15.0 - y_coords) / 25.0, 0.0, 1.0)
-                            collar_cut = collar_cut * collar_cut * (3.0 - 2.0 * collar_cut)
-                            face_alpha = face_alpha * collar_cut
 
                             norm_pixels[:, :, frame_i:frame_i+1, :, :] = (
                                 face_alpha * src_norm[:, :, frame_i:frame_i+1, :, :] +
