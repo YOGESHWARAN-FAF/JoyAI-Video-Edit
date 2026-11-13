@@ -264,7 +264,7 @@ def _check_face_gate(image: Image.Image, *, onnx_path: str,
     room_below = 1.0 - (fy + fh) / float(h)
     if room_below < float(min_below_ratio):
         return ("too_close", None, n_faces)
-    return (None, (cx, cy, min(fw, fh) / frame_min), n_faces)
+    return (None, (cx, cy, min(fw, fh) / frame_min, fx / float(w), fy / float(h), fw / float(w), fh / float(h)), n_faces)
 
 
 def _detect_gate_faces(image: Image.Image, *, onnx_path: str, score_thresh: float):
@@ -1089,7 +1089,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                       "subject_count": None, "cand": None, "cand_n": 0, "recount": False}
         kv_reset_frames = max(0, int(args.kv_reset_frames or 0))
 
-        output_quality = 90 if args.output_quality == "auto" else int(args.output_quality)
+        output_quality = 84 if args.output_quality == "auto" else int(args.output_quality)
         output_codec = "mjpeg"
         h264_stream: _H264Stream | None = None
         h264_ingest: _H264Ingest | None = None
@@ -1183,8 +1183,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 _slack = 0 if flow.get("has_ack") else int(_report_age * _fps)
                 _up_credit = int(min(float(flow.get("up_ms") or 0.0), 3000.0) * _fps / 1000.0)
                 _adj = max(0, _outstanding - _slack - _up_credit)
-                _hi = max(2 * count + 4, int(_fps * 0.8))
-                _lo = max(count, int(_fps * 0.35))
+                _hi = max(3 * count + 6, int(_fps * 1.5))
+                _lo = max(count + 2, int(_fps * 0.6))
                 _drop = False
                 if flow["congested"]:
                     if _adj <= _lo:
@@ -1711,18 +1711,15 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         if ref_image is not None:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
-                            if not clean_raw or clean_raw == args.prompt:
-                                session_prompt = (
-                                    "Replace the person's clothing with the exact outfit from the reference image. "
-                                    "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
-                                    "Keep the person's face, hair, skin, and background completely unchanged."
-                                )
+                            protect_clause = (
+                                "Replace the person's clothing with the exact outfit from the reference image. "
+                                "Render photorealistic textile fabric weave, sharp stitching, authentic folds, creases, and natural fabric texture. "
+                                "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
+                                "Keep the person's face, eyes, hair, skin, and background completely unchanged and in sharp focus."
+                            )
+                            if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on"):
+                                session_prompt = protect_clause
                             else:
-                                protect_clause = (
-                                    "Replace the person's clothing with the exact outfit from the reference image. "
-                                    "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
-                                    "Keep the person's face, hair, skin, and background completely unchanged."
-                                )
                                 if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
                                     session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
                         elif any(w in session_prompt.lower() for w in ("wear", "cloth", "dress", "jacket", "suit", "shirt", "pant", "hoodie", "coat", "outfit", "tshirt")):
@@ -2079,7 +2076,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                 gate_state["settle_asz"] = None
                                 return _body_reason
                         if _center is not None:
-                            _cx, _cy, _csz = _center
+                            _cx, _cy, _csz = _center[0], _center[1], _center[2]
+                            if len(_center) >= 7:
+                                gate_state["last_face_box"] = (_center[3], _center[4], _center[5], _center[6])
 
                             if _nf < 2 and abs(_cx - 0.5) > float(args.face_gate_center_margin):
                                 gate_state["count"] = 0
@@ -2120,6 +2119,19 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         _fresh = _tick == 0 or gate_state.get("absent_hold")
                         if _fresh:
                             _gfaces, _gfw, _gfh = _detect_gate_faces(frame, onnx_path=args.face_detector_onnx, score_thresh=fg_score)
+                            if _gfaces and _gfw > 0 and _gfh > 0:
+                                best_f = max(_gfaces, key=lambda f: f[2] * f[3])
+                                cur_fb = (float(best_f[0]) / _gfw, float(best_f[1]) / _gfh, float(best_f[2]) / _gfw, float(best_f[3]) / _gfh)
+                                if gate_state.get("last_face_box") is None:
+                                    gate_state["last_face_box"] = cur_fb
+                                else:
+                                    lfb = gate_state["last_face_box"]
+                                    gate_state["last_face_box"] = (
+                                        0.7 * lfb[0] + 0.3 * cur_fb[0],
+                                        0.7 * lfb[1] + 0.3 * cur_fb[1],
+                                        0.7 * lfb[2] + 0.3 * cur_fb[2],
+                                        0.7 * lfb[3] + 0.3 * cur_fb[3],
+                                    )
                             gate_state["face_unavailable"] = full_body_detection and _gfaces is None
                             gate_state["face_last"] = (_gfaces is not None or not full_body_detection) and _face_present_from(
                                 _gfaces, _gfw, _gfh,
@@ -2245,6 +2257,8 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             _rec_i.submit(frame, frame_meta.get("t_capture_ms"))
                             ws_debug["rec_in_written"] = _rec_i.frames_written
                             ws_debug["rec_in_dropped"] = _rec_i.frames_dropped_recording
+                        if gate_state.get("last_face_box") is not None:
+                            frame_meta["face_box"] = gate_state["last_face_box"]
                         session.push_frame(frame, frame_meta=frame_meta, drain_results=False)
                         edit_frames += 1
                         return []

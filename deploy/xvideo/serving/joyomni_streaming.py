@@ -1613,6 +1613,7 @@ class JoyOmniV2VStreamingSession:
                         profile=decoded.job.profile,
                         chunk_idx=decoded.job.chunk_idx,
                         source_frames=decoded.job.source_frames,
+                        source_metas=decoded.job.source_metas,
                     )
 
                 n_out = len(packed)
@@ -1803,11 +1804,70 @@ class JoyOmniV2VStreamingSession:
         profile: dict[str, Any] | None = None,
         chunk_idx: int,
         source_frames: list[Image.Image] | None = None,
+        source_metas: list[dict[str, Any]] | None = None,
     ) -> list[bytes]:
         post_device = self.postprocess_device
 
         chunk_decoded = decoded_pixels.to(device=post_device, dtype=torch.float32)
         norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
+
+        # Real-Face & Identity Preservation (100% optical camera focus on face, zero AI waxiness)
+        # Keeps user's real face, eyes, glasses, facial hair, and hair at 100% camera sensor clarity,
+        # with seamless Hermite feathering across the neck so the new try-on garment fits naturally.
+        preserve_face = os.environ.get("JOYOMNI_PRESERVE_FACE", "1") == "1"
+        if preserve_face and source_frames is not None and len(source_frames) > 0:
+            try:
+                src_tensor = self._frames_to_tensor(source_frames).to(device=post_device, dtype=torch.float32)
+                if src_tensor.shape == chunk_decoded.shape:
+                    src_norm = (src_tensor / 2.0 + 0.5).clamp(0.0, 1.0)
+                    b, c, t, h, w = norm_pixels.shape
+                    for frame_i in range(t):
+                        fb = None
+                        if source_metas and frame_i < len(source_metas):
+                            fb = source_metas[frame_i].get("face_box")
+
+                        # Fallback: if face_box missing in meta, run fast YuNet detection on source frame
+                        if fb is None:
+                            face_onnx_path = os.environ.get("JOYOMNI_FACE_ONNX", "")
+                            if face_onnx_path and os.path.exists(face_onnx_path):
+                                try:
+                                    import cv2
+                                    import numpy as np
+                                    if not hasattr(self, "_fallback_face_det"):
+                                        self._fallback_face_det = cv2.FaceDetectorYN.create(
+                                            face_onnx_path, "", (320, 213), 0.3, 0.3, 5000
+                                        )
+                                    sf_np = np.asarray(source_frames[frame_i])
+                                    sf_small = cv2.resize(sf_np[:, :, ::-1], (320, 213))
+                                    self._fallback_face_det.setInputSize((320, 213))
+                                    _, faces = self._fallback_face_det.detect(sf_small)
+                                    if faces is not None and len(faces) > 0:
+                                        best = max(faces, key=lambda f: f[2] * f[3])
+                                        fb = (float(best[0]) / 320.0, float(best[1]) / 213.0, float(best[2]) / 320.0, float(best[3]) / 213.0)
+                                except Exception:
+                                    pass
+
+                        if fb is not None:
+                            fx, fy, fw, fh = fb
+                            cx = float(fx + fw * 0.5) * w
+                            cy = float(fy + fh * 0.38) * h
+                            rx = float(fw * 0.65) * w
+                            ry = float(fh * 0.75) * h
+
+                            y_coords = torch.arange(h, device=post_device, dtype=torch.float32).view(1, 1, h, 1)
+                            x_coords = torch.arange(w, device=post_device, dtype=torch.float32).view(1, 1, 1, w)
+                            dist_sq = ((x_coords - cx) / max(1.0, rx)) ** 2 + ((y_coords - cy) / max(1.0, ry)) ** 2
+
+                            # Smooth Hermite transition (1.0 inside face -> 0.0 on chest/collar)
+                            face_alpha = torch.clamp((1.15 - dist_sq) / 0.40, 0.0, 1.0)
+                            face_alpha = face_alpha * face_alpha * (3.0 - 2.0 * face_alpha)
+
+                            norm_pixels[:, :, frame_i:frame_i+1, :, :] = (
+                                face_alpha * src_norm[:, :, frame_i:frame_i+1, :, :] +
+                                (1.0 - face_alpha) * norm_pixels[:, :, frame_i:frame_i+1, :, :]
+                            )
+            except Exception as _face_exc:
+                print(f"#####[STREAM] Face preservation notice: {_face_exc!r}", flush=True)
 
         # High-Fidelity Background & Detail Preservation (Decart-grade photorealism)
         # Defaults to 0 so original t-shirt layout, collars, and bare arm cutoff lines are NOT blended over new garments
@@ -1833,7 +1893,7 @@ class JoyOmniV2VStreamingSession:
         # Dual-Scale Contrast-Adaptive Texture Enhancement (DS-CATE)
         # Scale 1 (5x5): Structural fabric creases, 3D folds, and garment lighting shadows
         # Scale 2 (3x3): Micro-textile weave, stitching, hair, eyes, and skin details
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.40"))
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.45"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
@@ -1843,7 +1903,7 @@ class JoyOmniV2VStreamingSession:
             struct_creases = reshaped - blurred5
             micro_weave = reshaped - blurred3
             sharpened = torch.clamp(
-                reshaped + (sharpness_alpha * 0.65) * struct_creases + (sharpness_alpha * 0.45) * micro_weave,
+                reshaped + (sharpness_alpha * 0.70) * struct_creases + (sharpness_alpha * 0.50) * micro_weave,
                 0.0, 1.0,
             )
             frames_u8 = (

@@ -2056,6 +2056,15 @@ async function beginSession() {
   }
   if (sessionId !== activeSessionId || socket !== ws) return false;
   const rawPrompt = document.getElementById("prompt").value;
+  let effectivePrompt = rawPrompt;
+  if (refImage) {
+    const pTrim = (effectivePrompt || "").trim();
+    if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
+      effectivePrompt = (currentLang === "en"
+        ? "High-fidelity virtual try-on: Transfer and fit the clothing from the reference image onto the person's upper body. Render photorealistic fabric weave, sharp stitching, authentic folds, creases, and natural shadows. Keep the person's face, facial features, hair, skin tone, hands, and background completely unchanged and in sharp focus."
+        : "高精度虚拟试衣：将参考图中的服装精准穿在主角身上。生成细腻的织物面料纹理、清晰缝线与自然垂坠褶皱。保持主角面部五官、发型肤色及背景完全一致不变。");
+    }
+  }
   const usePe = document.getElementById("usePe").checked;
   const width = Number(sessionConfig.width);
   const height = Number(sessionConfig.height);
@@ -2071,7 +2080,7 @@ async function beginSession() {
   const startPayload = {
     type: "start",
     session_id: activeSessionId,
-    prompt: rawPrompt,
+    prompt: effectivePrompt,
     width,
     height,
     num_inference_steps: Number(sessionConfig.num_inference_steps),
@@ -3183,10 +3192,10 @@ for (const b of upqTierEl.querySelectorAll("button")) {
     updateMetrics();
   });
 }
-const Q_TIERS = [60, 80, 92];
+const Q_TIERS = [60, 84, 90];
 const downQualityUi = document.getElementById("downQualityUi");
 const qtierEl = document.getElementById("qtier");
-let autoQTier = 2;
+let autoQTier = 1;
 let autoQLowStreak = 0;
 let autoQHoldTicks = 0;
 function sendOutputQuality(v) {
