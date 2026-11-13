@@ -1717,10 +1717,18 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
                             lower_p = clean_raw.lower()
+                            is_saree = any(w in lower_p for w in ("saree", "sari", "lehenga", "anarkali", "dupatta", "salwar", "kurti"))
                             is_tshirt = any(w in lower_p for w in ("t-shirt", "tshirt", "tee", "crew neck", "round neck", "jersey", "tank"))
                             is_collared = any(w in lower_p for w in ("collared", "button", "suit", "placket", "formal shirt", "polo", "oxford"))
 
-                            if is_tshirt:
+                            if is_saree:
+                                garment_spec = (
+                                    "This is an elegant traditional Indian silk saree outfit with a matching tailored short-sleeved blouse. "
+                                    "Gracefully drape the rich red silk fabric with opulent golden zari brocade borders and floral motifs across the torso, with the pleated pallu draped over the shoulder. "
+                                    "Render authentic raw silk texture with natural shimmering golden luster, intricate zari embroidery, and fluid fabric folds following body movement. "
+                                    "Do not generate buttons, plackets, collar flaps, or western shirt seams. "
+                                )
+                            elif is_tshirt:
                                 garment_spec = (
                                     "This is a casual short-sleeved round-neck T-shirt (crew-neck tee) with a circular ribbed collar and clean seamless chest. "
                                     "Do not generate buttons, plackets, collar flaps, or formal shirt seams. "
@@ -1732,6 +1740,7 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             else:
                                 garment_spec = (
                                     "Faithfully replicate the exact garment styling, neckline, and collar from the reference image. "
+                                    "If the reference garment is a saree, drape the silk saree with pallu and matching blouse. "
                                     "If the reference garment is a T-shirt or crewneck tee, render a smooth round-neck collar without buttons or plackets. "
                                     "If the reference garment has collar flaps or buttons, render them sharply. "
                                 )
