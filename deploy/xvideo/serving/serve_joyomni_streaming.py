@@ -91,6 +91,11 @@ def _load_index_html() -> str:
 
 def _decode_image(data: bytes) -> Image.Image:
     with Image.open(io.BytesIO(data)) as image:
+        if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+            alpha = image.convert("RGBA").split()[-1]
+            bg = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            bg.paste(image, mask=alpha)
+            return bg.convert("RGB")
         return image.convert("RGB")
 
 def _decode_ref_image(value: str | None) -> Image.Image | None:
@@ -1711,20 +1716,38 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         if ref_image is not None:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
+                            lower_p = clean_raw.lower()
+                            is_tshirt = any(w in lower_p for w in ("t-shirt", "tshirt", "tee", "crew neck", "round neck", "jersey", "tank"))
+                            is_collared = any(w in lower_p for w in ("collared", "button", "suit", "placket", "formal shirt", "polo", "oxford"))
+
+                            if is_tshirt:
+                                garment_spec = (
+                                    "This is a casual short-sleeved round-neck T-shirt (crew-neck tee) with a circular ribbed collar and clean seamless chest. "
+                                    "Do not generate buttons, plackets, collar flaps, or formal shirt seams. "
+                                )
+                            elif is_collared:
+                                garment_spec = (
+                                    "This is a tailored collared shirt with crisp collar flaps, tailored placket, and buttons. "
+                                )
+                            else:
+                                garment_spec = (
+                                    "Faithfully replicate the exact garment styling, neckline, and collar from the reference image. "
+                                    "If the reference garment is a T-shirt or crewneck tee, render a smooth round-neck collar without buttons or plackets. "
+                                    "If the reference garment has collar flaps or buttons, render them sharply. "
+                                )
+
                             protect_clause = (
-                                "Transform the subject's upper body shirt into the exact outfit from the reference image. "
-                                "This is a tailored short-sleeved collared shirt with crisp sleeves ending above the elbows. "
-                                "Render photorealistic cotton textile fabric with authentic thread weave, sharp tailored stitching along the collar, "
-                                "crisp round buttons with distinct rims and buttonholes on the tailored placket, and natural fabric creases with realistic lighting shadows. "
-                                "Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. "
-                                "Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. "
-                                "Never generate long sleeves or fabric covering the arms."
+                                f"Transform the subject's upper body clothing into the exact garment shown in the reference image. "
+                                f"{garment_spec}"
+                                "Replicate authentic fabric texture, colors, graphic prints, text, logos, and seam construction from the reference image with photorealistic fidelity. "
+                                "Cleanly erase and replace all existing clothing graphics, colors, collars, and chest with the new garment. "
+                                "Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and background completely unchanged. "
+                                "Never generate long sleeves or fabric covering the arms unless the reference garment has long sleeves."
                             )
                             if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on"):
                                 session_prompt = protect_clause
                             else:
-                                if "Keep the subject's face" not in session_prompt and "preserve" not in session_prompt.lower():
-                                    session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
+                                session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
                         elif any(w in session_prompt.lower() for w in ("wear", "cloth", "dress", "jacket", "suit", "shirt", "pant", "hoodie", "coat", "outfit", "tshirt")):
                             if "face" not in session_prompt.lower():
                                 session_prompt = (

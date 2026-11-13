@@ -2080,8 +2080,8 @@ async function beginSession() {
     const pTrim = (effectivePrompt || "").trim();
     if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
       effectivePrompt = (currentLang === "en"
-        ? "Transform the subject's upper body shirt into the exact garment shown in the reference image. Replicate the authentic colors, fabric weave, graphic prints, text, sponsor logos, collar styling, and seam construction from the reference image with photorealistic fidelity. Render natural fabric drape with 3D folds and creases following the subject's body pose. Cleanly replace all existing clothing graphics and colors with the new outfit. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and background completely unchanged. Never generate long sleeves or fabric covering the arms."
-        : "将主角上半身的衣物完全替换为参考图中的服装。精准还原参考图中的颜色、面料质感、印花图案、文字标识、赞助商标志、领口造型及走线缝纫细节。生成随身体动态自然垂坠的立体衣褶与光影。彻底替换原有衣物图案与色彩。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成长袖或织物。");
+        ? "Transform the subject's upper body clothing into the exact garment shown in the reference image. Replicate the authentic colors, fabric weave, graphic prints, text, sponsor logos, neckline, collar styling, and seam construction from the reference image with photorealistic fidelity. If the reference is a T-shirt or crewneck tee, render a smooth circular round-neck collar without buttons or plackets. Render natural fabric drape with 3D folds and creases following the subject's body pose. Cleanly replace all existing clothing graphics, colors, and collars with the new outfit. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and background completely unchanged. Never generate long sleeves or fabric covering the arms."
+        : "将主角上半身的衣物完全替换为参考图中的服装。精准还原参考图中的颜色、面料质感、印花图案、文字标识、赞助商标志、领口造型及走线缝纫细节。若参考图为圆领T恤，请生成平整圆领且不含任何纽扣与门襟。生成随身体动态自然垂坠的立体衣褶与光影。彻底替换原有衣物图案、色彩与领口。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成长袖或织物。");
     }
   }
   const usePe = document.getElementById("usePe").checked;
