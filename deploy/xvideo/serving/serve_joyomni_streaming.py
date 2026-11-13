@@ -1713,9 +1713,10 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             clean_raw = raw_session_prompt.strip()
                             protect_clause = (
                                 "Transform the subject's upper body shirt into the exact outfit from the reference image. "
-                                "This is a short-sleeved collared shirt with short sleeves ending above the elbows. "
+                                "This is a tailored short-sleeved collared shirt with crisp sleeves ending above the elbows. "
+                                "Render photorealistic cotton textile fabric with authentic thread weave, sharp tailored stitching along the collar, "
+                                "crisp round buttons with distinct rims and buttonholes on the tailored placket, and natural fabric creases with realistic lighting shadows. "
                                 "Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. "
-                                "Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. "
                                 "Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. "
                                 "Never generate long sleeves or fabric covering the arms."
                             )

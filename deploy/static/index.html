@@ -1481,16 +1481,12 @@ function displayOutputFrame(item) {
 }
 
 function effectivePlaybackIntervalMs() {
-  const fps = outputPlaybackFps();
+  const fps = outputPlaybackFps() || 24;
   const base = Math.max(16, Math.round(1000 / fps));
   const q = outputFrameQueue.length;
-  // Dynamic queue-depth pacing:
-  // Target depth is 6-10 frames (~300-500ms buffer).
-  // If queue has built up significantly (>= 14 frames / > 1.5 chunks), drain gently (~45ms @ 20fps)
-  if (q >= 14) return Math.max(16, Math.round(base * 0.90));
-  // If buffer is critically low (<= 2 frames), stretch gently (~55ms @ 20fps) to avoid underrun
-  if (q <= 2) return Math.round(base * 1.10);
-  // Nominal interval (~50ms @ 20fps, ~42ms @ 24fps) - steady continuous presentation!
+  // Dynamic queue-depth pacing around target 4-8 frame buffer:
+  if (q >= 10) return Math.max(16, Math.round(base * 0.94));
+  if (q <= 2) return Math.round(base * 1.06);
   return base;
 }
 
@@ -1498,19 +1494,27 @@ function pumpOutputFrame() {
   if (!smoothPlaybackEnabled()) return;
 
   // Emergency clamp: Never drop frames during normal 8-frame chunk cycles!
-  // Only drop if network stalled and queue backed up beyond 24 frames (> 3 server chunks).
+  // Only drop if network stalled and queue backed up beyond 32 frames.
   if (outputFrameQueue.length > 48) {
-    while (outputFrameQueue.length > 36) {
+    while (outputFrameQueue.length > 32) {
       const dropped = outputFrameQueue.shift();
       disposeItem(dropped);
       outputQueueDroppedFrames += 1;
     }
   }
 
-  // Display EXACTLY ONE FRAME per tick so every single frame is presented to the user's display!
+  // Display EXACTLY ONE FRAME per tick for stable 24 FPS playback
   if (outputFrameQueue.length > 0) {
     const item = outputFrameQueue.shift();
     if (item) displayOutputFrame(item);
+  } else {
+    // Buffer drained: pause timer to let pre-roll buffer build smoothly on next chunk arrival
+    if (outputPlaybackTimer) {
+      clearInterval(outputPlaybackTimer);
+      outputPlaybackTimer = null;
+      outputPlaybackIntervalMs = null;
+    }
+    return;
   }
 
   ensureOutputPlaybackTimer();
@@ -1786,9 +1790,13 @@ function enqueueOutputFrame(frame, meta) {
     const dropped = outputFrameQueue.shift();
     if (dropped) { disposeItem(dropped); outputQueueDroppedFrames += 1; }
   }
-  // If queue was empty and it has been >= 25ms since last displayed frame, display first frame immediately
-  if (wasEmpty && (performance.now() - lastDisplayTimeMs >= 25)) {
-    pumpOutputFrame();
+  // Adaptive Pre-Roll Jitter Buffer for Continuous, Stable 24 FPS:
+  // When starting from an empty queue, buffer 4 frames (half a chunk) before starting playout.
+  // This guarantees the playback timer never runs dry between server chunks, eliminating chunk freezes!
+  if (wasEmpty) {
+    if (outputFrameQueue.length >= 4) {
+      ensureOutputPlaybackTimer();
+    }
   } else {
     ensureOutputPlaybackTimer();
   }
@@ -2061,8 +2069,8 @@ async function beginSession() {
     const pTrim = (effectivePrompt || "").trim();
     if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
       effectivePrompt = (currentLang === "en"
-        ? "Transform the subject's upper body shirt into the exact outfit from the reference image. This is a short-sleeved collared shirt with short sleeves ending above the elbows. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. Never generate long sleeves or fabric covering the arms."
-        : "将主角上半身的衣物完全替换为参考图中的服装。此服装为短袖衬衫，袖口位于肘部上方。彻底清除原有图案与文字。生成密实逼真的织物纹理、清晰领口缝线与自然褶皱。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成袖子或织物。");
+        ? "Transform the subject's upper body shirt into the exact outfit from the reference image. This is a tailored short-sleeved collared shirt with crisp sleeves ending above the elbows. Render photorealistic cotton textile fabric with authentic thread weave, sharp tailored stitching along the collar, crisp round buttons with distinct rims and buttonholes on the tailored placket, and natural fabric creases with realistic lighting shadows. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. Never generate long sleeves or fabric covering the arms."
+        : "将主角上半身的衣物完全替换为参考图中的服装。此服装为修身短袖衬衫，袖口位于肘部上方。彻底清除原有图案与文字。生成密实逼真的织物纹理、清晰领口缝线、门襟上精致清晰的纽扣与扣眼及自然褶皱。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成长袖或织物。");
     }
   }
   const usePe = document.getElementById("usePe").checked;

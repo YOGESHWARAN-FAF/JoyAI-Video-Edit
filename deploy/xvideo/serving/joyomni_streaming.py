@@ -1902,19 +1902,26 @@ class JoyOmniV2VStreamingSession:
             except Exception as _bg_exc:
                 print(f"#####[STREAM] Notice in bg preservation: {_bg_exc!r}", flush=True)
 
-        # Contrast-Adaptive Structural Texture Enhancement
-        # Scale (5x5): Structural fabric creases, lapels, collar folds, seams, and garment lighting shadows.
-        # Notice: We omit 3x3 high-pass micro_weave which amplifies VAE latent deconvolution moire/mesh grids.
-        # Structural crease enhancement (5x5) sharpens cloth folds, lapels, and shadows cleanly without noise.
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.25"))
+        # Dual-Tier Photorealistic Garment Texture Enhancement:
+        # Tier 1 (5x5): Structural fabric creases, natural lapels, and 3D lighting shadows
+        # Tier 2 (3x3 Laplacian): Crisp button rims, thread stitching along seams and placket, and textile weave
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.35"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
             reshaped = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
             blurred5 = F.avg_pool2d(reshaped, kernel_size=5, stride=1, padding=2)
             struct_creases = reshaped - blurred5
+
+            lap_k = torch.tensor(
+                [[0.0, -1.0, 0.0], [-1.0, 4.0, -1.0], [0.0, -1.0, 0.0]],
+                device=reshaped.device,
+                dtype=reshaped.dtype,
+            ).view(1, 1, 3, 3).repeat(c, 1, 1, 1)
+            laplacian_edges = F.conv2d(reshaped, lap_k, padding=1, groups=c)
+
             sharpened = torch.clamp(
-                reshaped + (sharpness_alpha * 0.60) * struct_creases,
+                reshaped + (sharpness_alpha * 0.50) * struct_creases + (sharpness_alpha * 0.35) * laplacian_edges,
                 0.0, 1.0,
             )
             frames_u8 = (
