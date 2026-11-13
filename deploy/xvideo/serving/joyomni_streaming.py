@@ -83,7 +83,7 @@ class StreamingSettings:
     max_sequence_length: int | None = None
     enable_denormalization: bool | None = None
     max_temporal_ids: int | None = None
-    freeze_kv_on_static: bool = True
+    freeze_kv_on_static: bool = False
     static_diff_thresh: float = 0.5
     store_clean_self_only: bool = True
     profile_timings: bool = False
@@ -738,7 +738,12 @@ class JoyOmniV2VStreamingSession:
         encoded = _vc.encode_via_dynamic(self.pipeline.vae, ref_img_encoded)
         if not hasattr(encoded, "latent_dist"):
             raise TypeError(f"Unsupported VAE encode output type for ref image: {type(encoded)}")
-        ref_img_latent = encoded.latent_dist.sample()
+        if hasattr(encoded.latent_dist, "mode"):
+            ref_img_latent = encoded.latent_dist.mode()
+        elif hasattr(encoded.latent_dist, "mean"):
+            ref_img_latent = encoded.latent_dist.mean
+        else:
+            ref_img_latent = encoded.latent_dist.sample()
         if self.enable_denormalization:
             ref_img_latent = self.pipeline.normalize_latents(ref_img_latent)
 
@@ -1789,7 +1794,12 @@ class JoyOmniV2VStreamingSession:
         with vae_ctx:
             pseudo_enc = pseudo_vae.encode(prev_pixels)
             if hasattr(pseudo_enc, "latent_dist"):
-                pseudo_latent = pseudo_enc.latent_dist.sample()
+                if hasattr(pseudo_enc.latent_dist, "mode"):
+                    pseudo_latent = pseudo_enc.latent_dist.mode()
+                elif hasattr(pseudo_enc.latent_dist, "mean"):
+                    pseudo_latent = pseudo_enc.latent_dist.mean
+                else:
+                    pseudo_latent = pseudo_enc.latent_dist.sample()
             else:
                 pseudo_latent = pseudo_enc
         self._set_debug_state("postprocess", "store_pseudo_latent", chunk_idx)
@@ -1850,17 +1860,24 @@ class JoyOmniV2VStreamingSession:
                         if fb is not None:
                             fx, fy, fw, fh = fb
                             cx = float(fx + fw * 0.5) * w
-                            cy = float(fy + fh * 0.38) * h
-                            rx = float(fw * 0.65) * w
-                            ry = float(fh * 0.75) * h
+                            cy = float(fy + fh * 0.42) * h
+                            rx = float(fw * 0.55) * w
+                            ry = float(fh * 0.48) * h
 
                             y_coords = torch.arange(h, device=post_device, dtype=torch.float32).view(1, 1, h, 1)
                             x_coords = torch.arange(w, device=post_device, dtype=torch.float32).view(1, 1, 1, w)
                             dist_sq = ((x_coords - cx) / max(1.0, rx)) ** 2 + ((y_coords - cy) / max(1.0, ry)) ** 2
 
-                            # Smooth Hermite transition (1.0 inside face -> 0.0 on chest/collar)
-                            face_alpha = torch.clamp((1.15 - dist_sq) / 0.40, 0.0, 1.0)
+                            # Smooth Hermite transition inside face (1.0 inside face -> 0.0 at outer face boundary)
+                            face_alpha = torch.clamp((1.0 - dist_sq) / 0.25, 0.0, 1.0)
                             face_alpha = face_alpha * face_alpha * (3.0 - 2.0 * face_alpha)
+
+                            # Strict collar boundary cutoff: never blend past chin (terminates at chin/upper jaw).
+                            # This guarantees 100% of the new garment collar, neckline, lapels, and chest are untouched.
+                            chin_y = float(fy + fh * 0.98) * h
+                            collar_cut = torch.clamp((chin_y + 15.0 - y_coords) / 25.0, 0.0, 1.0)
+                            collar_cut = collar_cut * collar_cut * (3.0 - 2.0 * collar_cut)
+                            face_alpha = face_alpha * collar_cut
 
                             norm_pixels[:, :, frame_i:frame_i+1, :, :] = (
                                 face_alpha * src_norm[:, :, frame_i:frame_i+1, :, :] +
@@ -1890,20 +1907,19 @@ class JoyOmniV2VStreamingSession:
             except Exception as _bg_exc:
                 print(f"#####[STREAM] Notice in bg preservation: {_bg_exc!r}", flush=True)
 
-        # Dual-Scale Contrast-Adaptive Texture Enhancement (DS-CATE)
-        # Scale 1 (5x5): Structural fabric creases, 3D folds, and garment lighting shadows
-        # Scale 2 (3x3): Micro-textile weave, stitching, hair, eyes, and skin details
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.45"))
+        # Contrast-Adaptive Structural Texture Enhancement
+        # Scale (5x5): Structural fabric creases, lapels, collar folds, seams, and garment lighting shadows.
+        # Notice: We omit 3x3 high-pass micro_weave which amplifies VAE latent deconvolution moire/mesh grids.
+        # Structural crease enhancement (5x5) sharpens cloth folds, lapels, and shadows cleanly without noise.
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.25"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
             reshaped = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
-            blurred3 = F.avg_pool2d(reshaped, kernel_size=3, stride=1, padding=1)
             blurred5 = F.avg_pool2d(reshaped, kernel_size=5, stride=1, padding=2)
             struct_creases = reshaped - blurred5
-            micro_weave = reshaped - blurred3
             sharpened = torch.clamp(
-                reshaped + (sharpness_alpha * 0.70) * struct_creases + (sharpness_alpha * 0.50) * micro_weave,
+                reshaped + (sharpness_alpha * 0.60) * struct_creases,
                 0.0, 1.0,
             )
             frames_u8 = (

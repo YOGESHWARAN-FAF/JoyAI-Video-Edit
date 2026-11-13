@@ -1712,10 +1712,10 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
                             protect_clause = (
-                                "Replace the person's clothing with the exact outfit from the reference image. "
-                                "Render photorealistic textile fabric weave, sharp stitching, authentic folds, creases, and natural fabric texture. "
-                                "Cleanly overwrite all original clothes, collars, and sleeves with the new garment. "
-                                "Keep the person's face, eyes, hair, skin, and background completely unchanged and in sharp focus."
+                                "Transform the subject's upper body clothing into the exact outfit from the reference image. "
+                                "Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and sleeves with the new garment. "
+                                "Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. "
+                                "Keep the subject's face, eyes, facial identity, hair, skin tone, hands, and the background completely unchanged."
                             )
                             if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on"):
                                 session_prompt = protect_clause
@@ -2467,7 +2467,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Product trial duration in seconds (default: 15.0). Automatically finalizes session and purges GPU memory.")
     parser.add_argument("--kv-reset-frames", type=int, default=600)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
-    parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("JOYOMNI_FREEZE_KV_ON_STATIC", "0") == "1")
     parser.add_argument("--static-diff-thresh", type=float, default=0.5)
     parser.add_argument("--preload", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--session-init-timeout-s", type=float, default=120.0, help="Timeout for session initialization, with or without a reference image.")

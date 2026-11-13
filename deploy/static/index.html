@@ -2061,8 +2061,8 @@ async function beginSession() {
     const pTrim = (effectivePrompt || "").trim();
     if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
       effectivePrompt = (currentLang === "en"
-        ? "High-fidelity virtual try-on: Transfer and fit the clothing from the reference image onto the person's upper body. Render photorealistic fabric weave, sharp stitching, authentic folds, creases, and natural shadows. Keep the person's face, facial features, hair, skin tone, hands, and background completely unchanged and in sharp focus."
-        : "高精度虚拟试衣：将参考图中的服装精准穿在主角身上。生成细腻的织物面料纹理、清晰缝线与自然垂坠褶皱。保持主角面部五官、发型肤色及背景完全一致不变。");
+        ? "Transform the subject's upper body clothing into the exact outfit from the reference image. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and sleeves with the new garment. Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. Keep the subject's face, eyes, facial identity, hair, skin tone, hands, and the background completely unchanged."
+        : "将主角上半身的衣物完全替换为参考图中的服装。彻底清除并替换原有图案、文字、领口及袖口。生成密实逼真的织物纹理、清晰挺拔的领口缝线与自然光影褶皱。保持主角面部五官、发型肤色及背景完全一致不变。");
     }
   }
   const usePe = document.getElementById("usePe").checked;
