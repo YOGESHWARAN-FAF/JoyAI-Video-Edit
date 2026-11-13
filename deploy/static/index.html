@@ -944,6 +944,9 @@ if (window.ResizeObserver && camera) {
 // the camera track rotates with the device; re-pick orientation while idle
 camera.addEventListener("resize", () => {
   if (usingVideoFile || startingRun || sessionGranted) return;
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
+  if (defH > defW) return;
   const vw = camera.videoWidth, vh = camera.videoHeight;
   if (!vw || !vh) return;
   const want = vh > vw ? "portrait" : "landscape";
@@ -1077,20 +1080,27 @@ function currentOrientation() {
   return h > w ? "portrait" : "landscape";
 }
 function defaultCameraOrientation() {
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
+  if (defH > defW) return "portrait";
   const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
   const portraitViewport = window.innerHeight > window.innerWidth;
   return (isMobile || portraitViewport) ? "portrait" : "landscape";
 }
 function orientDims(o) {
-  const a = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) || 840;
-  const b = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) || 480;
-  const long = Math.max(a, b), short = Math.min(a, b);
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
+  if (defH > defW) {
+    return { width: defW, height: defH };
+  }
+  const long = Math.max(defW, defH), short = Math.min(defW, defH);
   return o === "portrait" ? { width: short, height: long } : { width: long, height: short };
 }
 function applyOrientation(o) {
   const dims = orientDims(o);
   sessionConfig.width = dims.width;
   sessionConfig.height = dims.height;
+  updateMediaAspect();
   updateCropMask();
   updateMetrics();
 }
@@ -1821,7 +1831,9 @@ async function ensureCamera() {
   cameraTrackFps = settings.frameRate || null;
   const camVW = camera.videoWidth || 0;
   const camVH = camera.videoHeight || 0;
-  if (camVW && camVH) {
+  const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+  const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
+  if (defH <= defW && camVW && camVH) {
     const want = camVH > camVW ? "portrait" : "landscape";
     if (currentOrientation() !== want) applyOrientation(want);
   }
@@ -2787,7 +2799,9 @@ function handleVideoFileChange(event) {
   camera.onloadedmetadata = () => {
     const vw = camera.videoWidth || 0;
     const vh = camera.videoHeight || 0;
-    if (vw > 0 && vh > 0) {
+    const defW = (SERVER_DEFAULTS && SERVER_DEFAULTS.width) ? Number(SERVER_DEFAULTS.width) : 600;
+    const defH = (SERVER_DEFAULTS && SERVER_DEFAULTS.height) ? Number(SERVER_DEFAULTS.height) : 1080;
+    if (defH <= defW && vw > 0 && vh > 0) {
       const want = vh > vw ? "portrait" : "landscape";
       if (currentOrientation() !== want) {
         applyOrientation(want);
