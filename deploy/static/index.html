@@ -73,8 +73,7 @@
       object-fit: contain;
       object-position: center;
       background: transparent;
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
+      image-rendering: auto;
       transition: object-fit 0.2s ease;
     }
     .media-box #camera {
@@ -319,6 +318,18 @@
       filter: brightness(1.1);
       color: #fff;
     }
+    .vp-btn-gold {
+      background: linear-gradient(135deg, #d7a64a 0%, #b88b32 100%);
+      color: #fff;
+      border-color: #b88b32;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(215, 166, 74, 0.35);
+    }
+    .vp-btn-gold:hover {
+      filter: brightness(1.1);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(215, 166, 74, 0.55);
+    }
     .floating-download-btn {
       position: absolute;
       top: 14px;
@@ -510,12 +521,13 @@
       <span class="src-controls" id="resultControls">
         <button id="btnToggleFit" type="button" class="vp-btn" title="Toggle Fit / Fill View">⛶ <span id="fitBtnText" data-i18n="fill_view">Fill View</span></button>
         <button id="btnToggleTheater" type="button" class="vp-btn" title="Theater / Full View">🗖 <span id="theaterBtnText" data-i18n="full_view">Full View</span></button>
+        <button id="btnSnapshot2k" type="button" class="vp-btn vp-btn-gold" title="Capture Instant 2K Studio Snapshot">📸 <span data-i18n="snapshot_2k">2K Snapshot</span></button>
         <button id="btnDownloadHeader" type="button" class="vp-btn vp-btn-accent" title="Download Try-On Video">⬇️ <span data-i18n="download">Download HD</span></button>
       </span>
     </div>
     <div class="media-box fill-view">
-      <img id="outputImg" alt="编辑输出" data-i18n-alt="output_img_alt" />
-      <canvas id="outputCanvas" style="display:none"></canvas>
+      <img id="outputImg" alt="编辑输出" data-i18n-alt="output_img_alt" style="display:none" />
+      <canvas id="outputCanvas"></canvas>
       <video id="outputResult" playsinline controls style="display:none; position:absolute; inset:0; z-index:4;"></video>
       <button id="downloadBubble" type="button" class="download-bubble" style="display:none" data-i18n="download_done">✨ 编辑完成 · 下载</button>
       <button id="floatingDownloadBtn" type="button" class="floating-download-btn" style="display:none">
@@ -730,6 +742,7 @@ const I18N = {
     split_view: "分屏视图",
     prof_summary: "性能监控",
     download: "下载",
+    snapshot_2k: "2K 快照",
   },
   en: {
     tagline: "Streaming video editing",
@@ -806,6 +819,7 @@ const I18N = {
     split_view: "Split View",
     prof_summary: "Performance Metrics",
     download: "Download",
+    snapshot_2k: "2K Snapshot",
   },
 };
 let currentLang = localStorage.getItem("joyomni_lang") || "en";
@@ -924,13 +938,7 @@ function showOutputIdle(show) {
 }
 function updateResBanner() {
   const el = document.getElementById("resBanner");
-  const txt = document.getElementById("resBannerText");
-  if (!el || !txt) return;
-  const w = sessionConfig.width;
-  const h = sessionConfig.height;
-  if (!w || !h || h >= 1080 || w * h >= 720 * 1248 * 0.9) { el.style.display = "none"; return; }
-  txt.textContent = t("res_notice").replace("{res}", w + "×" + h);
-  el.style.display = "";
+  if (el) el.style.display = "none";
 }
 function showOutputStart(show, text) {
   const ov = document.getElementById("outputStartOverlay");
@@ -1424,44 +1432,48 @@ function displayOutputFrame(item) {
     waitHintReason = null;
     if (outputWaitOverlay) outputWaitOverlay.style.display = "none";
   }
+
+  // 2K High-Definition Canvas Upscaling & Rendering:
+  // Dynamically size outputCanvas to 2K studio height (1920px) preserving exact aspect ratio,
+  // applying GPU-accelerated bicubic smoothing for razor-sharp clothing weave and real face details.
+  const srcW = (item.bmp && item.bmp.width) || (outputImg && outputImg.naturalWidth) || sessionConfig.width || 576;
+  const srcH = (item.bmp && item.bmp.height) || (outputImg && outputImg.naturalHeight) || sessionConfig.height || 960;
+  const targetH = 1920;
+  const targetW = Math.round(targetH * (srcW / srcH));
+
+  if (outputCanvas.style.display === "none") {
+    outputCanvas.style.display = "";
+    outputImg.style.display = "none";
+  }
+
+  if (outputCanvas.width !== targetW || outputCanvas.height !== targetH) {
+    outputCanvas.width = targetW;
+    outputCanvas.height = targetH;
+  }
+  if (outputCanvasCtx) {
+    outputCanvasCtx.imageSmoothingEnabled = true;
+    outputCanvasCtx.imageSmoothingQuality = "high";
+  }
+
   if (item.bmp) {
-    if (outputCanvas.style.display === "none") {
-      outputCanvas.style.display = "";
-      outputImg.style.display = "none";
-    }
-    const w = item.bmp.width || sessionConfig.width || 720;
-    const h = item.bmp.height || sessionConfig.height || 1080;
-    if (outputCanvas.width !== w || outputCanvas.height !== h) {
-      outputCanvas.width = w;
-      outputCanvas.height = h;
-      if (outputCanvasCtx) {
-        outputCanvasCtx.imageSmoothingEnabled = true;
-        outputCanvasCtx.imageSmoothingQuality = "high";
-      }
-    }
-    if (outputCanvasCtx) outputCanvasCtx.drawImage(item.bmp, 0, 0);
+    if (outputCanvasCtx) outputCanvasCtx.drawImage(item.bmp, 0, 0, targetW, targetH);
     try { item.bmp.close(); } catch (e) {}
     item.bmp = null;
   } else if (item.url) {
-    if (outputImg.style.display === "none") {
-      outputImg.style.display = "";
-      outputCanvas.style.display = "none";
-    }
     if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
     pendingRevokeUrl = lastObjectUrl;
     lastObjectUrl = item.url;
-    outputImg.onload = outputImg.onerror = function() {
+    const tempImg = new Image();
+    tempImg.onload = tempImg.onerror = function() {
       if (pendingRevokeUrl) { URL.revokeObjectURL(pendingRevokeUrl); pendingRevokeUrl = null; }
-      outputImg.onload = outputImg.onerror = null;
-      const nw = outputImg.naturalWidth || sessionConfig.width || 720;
-      const nh = outputImg.naturalHeight || sessionConfig.height || 1080;
-      if (outputCanvas.width !== nw || outputCanvas.height !== nh) {
-        outputCanvas.width = nw;
-        outputCanvas.height = nh;
+      tempImg.onload = tempImg.onerror = null;
+      if (outputCanvasCtx) {
+        outputCanvasCtx.imageSmoothingEnabled = true;
+        outputCanvasCtx.imageSmoothingQuality = "high";
+        outputCanvasCtx.drawImage(tempImg, 0, 0, targetW, targetH);
       }
-      if (outputCanvasCtx) outputCanvasCtx.drawImage(outputImg, 0, 0);
     };
-    outputImg.src = item.url;
+    tempImg.src = item.url;
   }
   displayedFrames += 1;
   displayedFramesWindow += 1;
@@ -1791,9 +1803,8 @@ function enqueueOutputFrame(frame, meta) {
     if (dropped) { disposeItem(dropped); outputQueueDroppedFrames += 1; }
   }
   // Adaptive Pre-Roll Jitter Buffer for Continuous, Stable 24 FPS:
-  // When starting from an empty queue, buffer 4 frames (half a chunk) before starting playout.
-  // This guarantees the playback timer never runs dry between server chunks, eliminating chunk freezes!
-  if (wasEmpty) {
+  // Buffer 4 frames (166ms) before kicking off playback so the timer never starves!
+  if (!outputPlaybackTimer) {
     if (outputFrameQueue.length >= 4) {
       ensureOutputPlaybackTimer();
     }
@@ -2377,7 +2388,21 @@ async function start() {
       feedOutputH264(event.data, meta);
       return;
     }
-    enqueueOutputFrame(new Blob([event.data], { type: "image/jpeg" }), meta);
+    const blob = new Blob([event.data], { type: "image/jpeg" });
+    if (typeof createImageBitmap === "function") {
+      const sessId = activeSessionId;
+      createImageBitmap(blob, { imageOrientation: "none", premultiplyAlpha: "none" }).then((bmp) => {
+        if (sessId !== activeSessionId) {
+          try { bmp.close(); } catch (e) {}
+          return;
+        }
+        enqueueOutputFrame(bmp, meta);
+      }).catch(() => {
+        enqueueOutputFrame(blob, meta);
+      });
+    } else {
+      enqueueOutputFrame(blob, meta);
+    }
   };
   socket.onclose = () => {
     if (ws !== socket) return;
@@ -3437,6 +3462,41 @@ function downloadTryOnVideo() {
   showOutputToast("Please start a try-on session first to record and download video", 3500);
 }
 
+function capture2kSnapshot() {
+  if (!outputCanvas || outputCanvas.width === 0 || outputCanvas.height === 0 || displayedFrames === 0) {
+    showOutputToast("⚠️ Start a try-on session to capture a 2K photo", 3000);
+    return;
+  }
+  try {
+    const targetW = outputCanvas.width || 1152;
+    const targetH = outputCanvas.height || 1920;
+    const snapCanvas = document.createElement("canvas");
+    snapCanvas.width = targetW;
+    snapCanvas.height = targetH;
+    const sCtx = snapCanvas.getContext("2d");
+    if (!sCtx) return;
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = "high";
+    sCtx.drawImage(outputCanvas, 0, 0, targetW, targetH);
+
+    snapCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `joyai_tryon_2k_snapshot_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showOutputToast("📸 2K Snapshot saved!", 2500);
+    }, "image/png");
+  } catch (err) {
+    console.error("2K snapshot error:", err);
+    showOutputToast("Snapshot error: " + (err.message || err), 3000);
+  }
+}
+
 window.addEventListener("load", () => {
   applyServerDefaults();
   const langBtn = document.getElementById("langToggle");
@@ -3449,6 +3509,8 @@ window.addEventListener("load", () => {
   if (btnToggleFit) btnToggleFit.addEventListener("click", () => setFitMode(!isFillView));
   const btnToggleTheater = document.getElementById("btnToggleTheater");
   if (btnToggleTheater) btnToggleTheater.addEventListener("click", () => setTheaterMode(!isTheaterMode));
+  const btnSnapshot2k = document.getElementById("btnSnapshot2k");
+  if (btnSnapshot2k) btnSnapshot2k.addEventListener("click", capture2kSnapshot);
   const btnTrialDownload = document.getElementById("btnTrialDownload");
   if (btnTrialDownload) btnTrialDownload.addEventListener("click", downloadTryOnVideo);
   const floatingDownloadBtn = document.getElementById("floatingDownloadBtn");

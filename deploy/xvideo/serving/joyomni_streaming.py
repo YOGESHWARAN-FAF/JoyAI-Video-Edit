@@ -1902,26 +1902,38 @@ class JoyOmniV2VStreamingSession:
             except Exception as _bg_exc:
                 print(f"#####[STREAM] Notice in bg preservation: {_bg_exc!r}", flush=True)
 
-        # Dual-Tier Photorealistic Garment Texture Enhancement:
-        # Tier 1 (5x5): Structural fabric creases, natural lapels, and 3D lighting shadows
-        # Tier 2 (3x3 Laplacian): Crisp button rims, thread stitching along seams and placket, and textile weave
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.35"))
+        # Multi-Scale Photorealistic Garment Texture & Detailing Enhancer:
+        # Tier 1 (Gaussian 3x3): Micro-grain cotton thread weave and tactile textile texture
+        # Tier 2 (Gaussian 7x7): Natural fabric creases, lapels, and 3D lighting shadows
+        # Tier 3 (8-neighbor Laplacian): Razor-sharp button rims, buttonholes, collar seams, and placket stitches
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.40"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
             reshaped = norm_pixels.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
-            blurred5 = F.avg_pool2d(reshaped, kernel_size=5, stride=1, padding=2)
-            struct_creases = reshaped - blurred5
 
-            lap_k = torch.tensor(
-                [[0.0, -1.0, 0.0], [-1.0, 4.0, -1.0], [0.0, -1.0, 0.0]],
+            # 3x3 Gaussian for textile micro-grain & thread weave (binomial [1, 2, 1]/4)
+            k3_1d = torch.tensor([0.25, 0.5, 0.25], device=reshaped.device, dtype=reshaped.dtype)
+            k3_2d = (k3_1d.view(3, 1) @ k3_1d.view(1, 3)).view(1, 1, 3, 3).repeat(c, 1, 1, 1)
+            blurred3 = F.conv2d(reshaped, k3_2d, padding=1, groups=c)
+            fine_weave = reshaped - blurred3
+
+            # 7x7 Gaussian for structural creases, natural drape, and shadow depth (binomial / 64)
+            k7_1d = torch.tensor([1., 6., 15., 20., 15., 6., 1.], device=reshaped.device, dtype=reshaped.dtype) / 64.0
+            k7_2d = (k7_1d.view(7, 1) @ k7_1d.view(1, 7)).view(1, 1, 7, 7).repeat(c, 1, 1, 1)
+            blurred7 = F.conv2d(reshaped, k7_2d, padding=3, groups=c)
+            struct_folds = reshaped - blurred7
+
+            # Rotationally invariant 8-neighbor Laplacian for crisp button rims, edges, and stitching
+            klap = torch.tensor(
+                [[-1., -1., -1.], [-1., 8., -1.], [-1., -1., -1.]],
                 device=reshaped.device,
                 dtype=reshaped.dtype,
-            ).view(1, 1, 3, 3).repeat(c, 1, 1, 1)
-            laplacian_edges = F.conv2d(reshaped, lap_k, padding=1, groups=c)
+            ).view(1, 1, 3, 3).repeat(c, 1, 1, 1) / 8.0
+            lap_edges = F.conv2d(reshaped, klap, padding=1, groups=c)
 
             sharpened = torch.clamp(
-                reshaped + (sharpness_alpha * 0.50) * struct_creases + (sharpness_alpha * 0.35) * laplacian_edges,
+                reshaped + sharpness_alpha * (0.50 * fine_weave + 0.35 * struct_folds + 0.35 * lap_edges),
                 0.0, 1.0,
             )
             frames_u8 = (
