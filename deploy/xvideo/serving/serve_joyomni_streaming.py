@@ -1712,10 +1712,12 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
                             protect_clause = (
-                                "Transform the subject's upper body clothing into the exact outfit from the reference image. "
-                                "Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and sleeves with the new garment. "
+                                "Transform the subject's upper body shirt into the exact outfit from the reference image. "
+                                "This is a short-sleeved collared shirt with short sleeves ending above the elbows. "
+                                "Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. "
                                 "Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. "
-                                "Keep the subject's face, eyes, facial identity, hair, skin tone, hands, and the background completely unchanged."
+                                "Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. "
+                                "Never generate long sleeves or fabric covering the arms."
                             )
                             if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on"):
                                 session_prompt = protect_clause

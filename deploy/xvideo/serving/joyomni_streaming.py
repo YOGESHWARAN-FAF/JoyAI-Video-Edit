@@ -1962,13 +1962,18 @@ class JoyOmniV2VStreamingSession:
 
         import cv2
         enc_params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-        jpegs = []
-        for t in range(arr.shape[0]):
-            bgr = cv2.cvtColor(arr[t], cv2.COLOR_RGB2BGR)
+        if not hasattr(self, "_enc_executor"):
+            from concurrent.futures import ThreadPoolExecutor
+            self._enc_executor = ThreadPoolExecutor(max_workers=8)
+
+        def _encode_single(frame_np):
+            bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
             ok, buf = cv2.imencode(".jpg", bgr, enc_params)
             if not ok:
-                raise RuntimeError(f"cv2.imencode failed for frame {t} of chunk {chunk_idx}")
-            jpegs.append(buf.tobytes())
+                raise RuntimeError("cv2.imencode failed")
+            return buf.tobytes()
+
+        jpegs = list(self._enc_executor.map(_encode_single, [arr[t] for t in range(arr.shape[0])]))
         if profile is not None:
             profile["jpeg_encode_s"] = float(profile.get("jpeg_encode_s", 0.0)) + (time.perf_counter() - started)
         return jpegs

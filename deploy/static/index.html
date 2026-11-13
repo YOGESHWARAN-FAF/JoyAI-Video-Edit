@@ -2061,8 +2061,8 @@ async function beginSession() {
     const pTrim = (effectivePrompt || "").trim();
     if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
       effectivePrompt = (currentLang === "en"
-        ? "Transform the subject's upper body clothing into the exact outfit from the reference image. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and sleeves with the new garment. Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. Keep the subject's face, eyes, facial identity, hair, skin tone, hands, and the background completely unchanged."
-        : "将主角上半身的衣物完全替换为参考图中的服装。彻底清除并替换原有图案、文字、领口及袖口。生成密实逼真的织物纹理、清晰挺拔的领口缝线与自然光影褶皱。保持主角面部五官、发型肤色及背景完全一致不变。");
+        ? "Transform the subject's upper body shirt into the exact outfit from the reference image. This is a short-sleeved collared shirt with short sleeves ending above the elbows. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. Render dense, opaque textile fabric with realistic weave, crisp collar and seams, natural wrinkles, and authentic lighting drape. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. Never generate long sleeves or fabric covering the arms."
+        : "将主角上半身的衣物完全替换为参考图中的服装。此服装为短袖衬衫，袖口位于肘部上方。彻底清除原有图案与文字。生成密实逼真的织物纹理、清晰领口缝线与自然褶皱。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成袖子或织物。");
     }
   }
   const usePe = document.getElementById("usePe").checked;
