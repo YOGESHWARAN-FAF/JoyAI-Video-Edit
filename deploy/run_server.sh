@@ -101,13 +101,6 @@ export JOYOMNI_SHARPNESS="${JOYOMNI_SHARPNESS:-0.42}"
 export JOYOMNI_OUTPUT_QUALITY="${JOYOMNI_OUTPUT_QUALITY:-95}"
 export JOYOMNI_PRESERVE_BACKGROUND="${JOYOMNI_PRESERVE_BACKGROUND:-0}"
 export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-768}"
-export JOYOMNI_STUDIO_WHITE="${JOYOMNI_STUDIO_WHITE:-1}"
-export JOYOMNI_STUDIO_INPUT_WHITEN="${JOYOMNI_STUDIO_INPUT_WHITEN:-1}"
-export JOYOMNI_DETECTION_STRIDE="${JOYOMNI_DETECTION_STRIDE:-6}"
-# Active Spatial Diffusion: 864x720 (1080 tokens, ~38ms/step) ensures sustained 24+ FPS on L40S without GPU overload
-export JOYOMNI_ROI_MODE="${JOYOMNI_ROI_MODE:-1}"
-export JOYOMNI_ROI_WIDTH="${JOYOMNI_ROI_WIDTH:-864}"
-export JOYOMNI_ROI_HEIGHT="${JOYOMNI_ROI_HEIGHT:-720}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-none}"
@@ -118,15 +111,6 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 RECORD_DIR="${JOYOMNI_RECORD_DIR:-$HERE/recordings}"
 
 CKPT_ROOT="${JOYOMNI_CKPT_ROOT:-$HERE/deps/checkpoints}"
-mkdir -p "$CKPT_ROOT"
-
-# Pre-cache LRASPP studio segmenter model (12.5 MB) for zero-latency GPU background removal
-LRASPP_CKPT="$CKPT_ROOT/lraspp_mobilenet_v3_large-d234d4ea.pth"
-if [ ! -f "$LRASPP_CKPT" ] || [ "$(wc -c < "$LRASPP_CKPT" 2>/dev/null || echo 0)" -lt 10000000 ]; then
-  echo "#####[PREFLIGHT] Pre-caching studio segmenter weights (12.5 MB)..."
-  curl -sSL -H "User-Agent: Mozilla/5.0" "https://download.pytorch.org/models/lraspp_mobilenet_v3_large-d234d4ea.pth" -o "$LRASPP_CKPT" 2>/dev/null || true
-fi
-
 export JOYOMNI_PE_CKPT="${JOYOMNI_PE_CKPT:-$CKPT_ROOT/Qwen3.6-27B-GPTQ-Int4-FOEM}"
 DIT_CKPT="${JOYOMNI_DIT_CKPT:-$CKPT_ROOT/JoyAI-Video-Edit/dit/joyai_video_edit_dit_1101_face++.pth}"
 VAE_CKPT="${JOYOMNI_VAE_CKPT:-$CKPT_ROOT/JoyAI-Video-Edit/vae}"
@@ -137,11 +121,6 @@ PERSON_ONNX="${JOYOMNI_PERSON_ONNX:-$CKPT_ROOT/yolov8n.onnx}"
 DEVICE="${JOYOMNI_DEVICE:-cuda:0}"
 HOST="${JOYOMNI_HOST:-0.0.0.0}"
 PORT="${JOYOMNI_PORT:-8080}"
-
-ROI_ARGS=()
-if [ "$JOYOMNI_ROI_MODE" = "1" ]; then
-  ROI_ARGS=(--roi-mode --roi-width "${JOYOMNI_ROI_WIDTH:-864}" --roi-height "${JOYOMNI_ROI_HEIGHT:-720}")
-fi
 
 "$PYTHON_BIN" xvideo/serving/serve_joyomni_streaming.py \
   --dit-ckpt          "$DIT_CKPT" \
@@ -155,13 +134,10 @@ fi
   --vae-decode-device "$DEVICE" \
   --vae-pseudo-device "$DEVICE" \
   --postprocess-device "$DEVICE" \
-  --width "${JOYOMNI_WIDTH:-1280}" --height "${JOYOMNI_HEIGHT:-720}" \
-  --fps "${JOYOMNI_FPS:-24}" \
+  --width "${JOYOMNI_WIDTH:-840}" --height "${JOYOMNI_HEIGHT:-480}" \
+  --fps "${JOYOMNI_FPS:-20}" \
   --output-quality "${JOYOMNI_OUTPUT_QUALITY:-95}" \
   --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-15}" \
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
-  --detection-stride "${JOYOMNI_DETECTION_STRIDE:-6}" \
-  --studio-white \
-  "${ROI_ARGS[@]}" \
   --host "$HOST" --port "$PORT" \
   "$@"

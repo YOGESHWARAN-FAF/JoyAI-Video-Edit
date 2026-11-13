@@ -1848,10 +1848,6 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             static_diff_thresh=static_diff_thresh,
                             profile_timings=bool(payload.get("profile_timings", args.profile_timings)),
                             output_codec=output_codec,
-                            studio_white=bool(getattr(args, "studio_white", True)),
-                            roi_mode=bool(getattr(args, "roi_mode", True)),
-                            roi_width=int(getattr(args, "roi_width", 576)),
-                            roi_height=int(getattr(args, "roi_height", 768)),
                         )
 
                         print("#####[RESTART] creating new session", flush=True)
@@ -2245,8 +2241,6 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             _rec_i.submit(frame, frame_meta.get("t_capture_ms"))
                             ws_debug["rec_in_written"] = _rec_i.frames_written
                             ws_debug["rec_in_dropped"] = _rec_i.frames_dropped_recording
-                        if gate_state.get("cx") is not None and gate_state.get("cy") is not None:
-                            frame_meta["face_center"] = (gate_state["cx"], gate_state["cy"])
                         session.push_frame(frame, frame_meta=frame_meta, drain_results=False)
                         edit_frames += 1
                         return []
@@ -2401,10 +2395,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vae-pseudo-device", type=str, default=None)
     parser.add_argument("--postprocess-device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--height", type=int, default=720)
-    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=480)
+    parser.add_argument("--width", type=int, default=840)
     parser.add_argument("--num-inference-steps", type=int, default=1)
-    parser.add_argument("--fps", type=int, default=24, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
+    parser.add_argument("--fps", type=int, default=20, help="Client send/playback target fps; seeds the #fps UI control and paces the live camera. Recording follows each frame's t_capture_ms (media time for mp4 uploads, capture wall-clock for the live camera), so this does not set the recorded file's duration.")
     parser.add_argument("--use-pe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pe-backend", choices=("qwen", "api", "none"),
                         default=os.environ.get("JOYOMNI_PE_BACKEND", "none"))
@@ -2437,7 +2431,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--count-face-min-ratio", type=float, default=0.45, help="For person-count-change: a face counts as an additional subject only if its short side is >= this fraction of the MAIN (largest/foreground) face's short side; an absolute floor of 5% of the frame short side also applies. Excludes far-smaller BACKGROUND people (e.g. a coworker behind the subject) that otherwise flip the count and trigger spurious re-edits. Higher = stricter (ignore more background).")
     parser.add_argument("--person-detector-onnx", type=str, default=DEFAULT_PERSON_DETECTOR_ONNX, help="YOLOv8n ONNX (fixed 320 input) for mid-session body presence via cv2.dnn. Missing/unloadable -> the body check passes through (always 'present'); face-present rules still apply, so no_face black-holds can still trigger.")
     parser.add_argument("--person-gate-conf", type=float, default=0.35, help="Min YOLO person-class score to count the person as present.")
-    parser.add_argument("--detection-stride", type=int, default=int(os.environ.get("JOYOMNI_DETECTION_STRIDE", "6")),
+    parser.add_argument("--detection-stride", type=int, default=2,
                         help="Shared face/full-body monitoring interval at 24 FPS; scaled with client FPS. Startup and paused recovery inspect every frame.")
     parser.add_argument("--person-body-flip-frames", type=int, default=6, help="Consecutive body-misses before the client reason flips to no_person. Below this, a lone YOLO dip (a hand/object over the face also clips the torso) keeps the current reason -- normally show_full_face -- so the hint doesn't strobe no_face<->no_person. Reason-only de-bounce; the black-hold timing (--presence-absent-frames) is unaffected. ~24fps, 6 ≈ 0.25s. Higher = more reluctant to ever show no_person; 1 = report no_person on the first miss (old behavior).")
     parser.add_argument("--output-quality", default="auto",
@@ -2463,19 +2457,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-inflight-chunks", type=int, default=3, help="Limit chunks in flight: camera input drops excess frames, file input waits for capacity. 0 disables; overridable per session.")
     parser.add_argument("--session-close-timeout-s", type=float, default=15.0, help="Session cleanup timeout. If workers or GPU work remain active, reject new sessions until restart.")
     parser.add_argument("--inference-lock-timeout-s", type=float, default=5.0, help="Max seconds to wait for the process-wide inference lock.")
-
-    parser.add_argument("--studio-white", action=argparse.BooleanOptionalAction,
-                        default=os.environ.get("JOYOMNI_STUDIO_WHITE", "1") == "1",
-                        help="Enable pure solid studio white background (#FFFFFF).")
-    parser.add_argument("--roi-mode", action=argparse.BooleanOptionalAction,
-                        default=os.environ.get("JOYOMNI_ROI_MODE", "1") == "1",
-                        help="Enable dynamic Person RoI cropping to eliminate background DiT compute.")
-    parser.add_argument("--roi-width", type=int,
-                        default=int(os.environ.get("JOYOMNI_ROI_WIDTH", "864")),
-                        help="Target width for person RoI crop (must be multiple of 24).")
-    parser.add_argument("--roi-height", type=int,
-                        default=int(os.environ.get("JOYOMNI_ROI_HEIGHT", "720")),
-                        help="Target height for person RoI crop (must be multiple of 24).")
 
     parser.add_argument("--record-dir", type=str, default=None, help="Directory to record input/output mp4s into (per-session subfolder). Off if unset.")
     parser.add_argument("--record-codec", type=str, default="libx264", help="Recording video codec (PyAV/ffmpeg name).")

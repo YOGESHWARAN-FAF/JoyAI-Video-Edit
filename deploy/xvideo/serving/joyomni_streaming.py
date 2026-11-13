@@ -88,10 +88,6 @@ class StreamingSettings:
     store_clean_self_only: bool = True
     profile_timings: bool = False
     output_codec: str = "mjpeg"
-    studio_white: bool = True
-    roi_mode: bool = True
-    roi_width: int = 576
-    roi_height: int = 768
 
 @dataclass
 class StreamingChunkResult:
@@ -110,7 +106,6 @@ class _ChunkJob:
     total_started: float
     frozen_anchor_id: int | None = None
     valid_count: int | None = None
-    crop_box: tuple[int, int, int, int] | None = None
 
 @dataclass
 class _EncodedChunk:
@@ -484,7 +479,7 @@ class JoyOmniV2VStreamingSession:
         self.ref_image = ref_image.convert("RGB") if ref_image is not None else None
         self.ref_image_latent: torch.Tensor | None = None
         self.device = self.pipeline.transformer.device
-        self.generator = torch.Generator(device="cpu").manual_seed(settings.seed)
+        self.generator = torch.Generator(device=self.device).manual_seed(settings.seed)
 
         self._prev_static_gray: np.ndarray | None = None
         self._static_anchor_id: int | None = None
@@ -504,41 +499,12 @@ class JoyOmniV2VStreamingSession:
 
         self.ffactor_t = int(self.pipeline.vae_scale_factor_temporal)
         self.latent_channels = int(self.pipeline.vae.config.latent_channels)
-        self.roi_mode = bool(settings.roi_mode)
-        self.studio_white = bool(settings.studio_white)
-
         _stem = self.pipeline.vae.stem
-        _align = _stem.stride * 8
-        if self.roi_mode:
-            target_roi_h = min(settings.roi_height, settings.height)
-            target_roi_w = min(settings.roi_width, settings.width)
-            self.dit_h = max(_align, (target_roi_h // _align) * _align)
-            self.dit_w = max(_align, (target_roi_w // _align) * _align)
-        else:
-            self.dit_w = settings.width
-            self.dit_h = settings.height
-
-        assert self.dit_h % _align == 0 and self.dit_w % _align == 0, (
-            f"session DiT size must be a multiple of {_align}, got {self.dit_w}x{self.dit_h}"
+        assert settings.height % (_stem.stride * 8) == 0 and settings.width % (_stem.stride * 8) == 0, (
+            f"session size must be a multiple of {_stem.stride * 8}, got {settings.width}x{settings.height}"
         )
-        self.latent_h = self.dit_h * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
-        self.latent_w = self.dit_w * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
-
-        from xvideo.serving.roi_manager import PersonRoIManager
-        from xvideo.serving.studio_compositor import WhiteStudioCompositor
-
-        self.roi_manager = (
-            PersonRoIManager(target_w=self.dit_w, target_h=self.dit_h)
-            if self.roi_mode else None
-        )
-        self.studio_compositor = (
-            WhiteStudioCompositor(
-                output_w=settings.width,
-                output_h=settings.height,
-                device=self.postprocess_device,
-            )
-            if (self.studio_white or self.roi_mode) else None
-        )
+        self.latent_h = settings.height * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
+        self.latent_w = settings.width * _stem.group // _stem.stride // int(self.pipeline.vae_scale_factor)
         self.local_window_size = int(getattr(self.pipeline.transformer.config, "local_window_size", 1))
         self.global_sink_chunk = self.pipeline._resolve_global_sink_chunk(None, self.pipeline.transformer)
         self.enable_denormalization = (
@@ -642,22 +608,11 @@ class JoyOmniV2VStreamingSession:
         drain_results: bool = True,
     ) -> list[StreamingChunkResult]:
         self._raise_worker_error_if_needed()
-        frame = self._resize_canvas_frame(frame)
+        frame = self._resize_frame(frame)
         meta = frame_meta or {"seq": self.chunk_idx + len(self.pending_frames) + 1, "t_capture_ms": time.time() * 1000.0}
-
-        crop_box = None
-        if self.roi_manager is not None:
-            pbox = meta.get("person_box") if meta else None
-            fcenter = meta.get("face_center") if meta else None
-            feed_frame, crop_box = self.roi_manager.crop_pil(frame, person_box=pbox, face_center=fcenter)
-            meta["crop_box"] = crop_box
-            meta["full_frame"] = frame
-        else:
-            feed_frame = frame
-
         if not self.initialized:
-            self._initialize(feed_frame)
-        self.pending_frames.append(feed_frame)
+            self._initialize(frame)
+        self.pending_frames.append(frame)
         self.pending_metas.append(meta)
         while len(self.pending_frames) >= self.frames_per_next_chunk:
             n = self.frames_per_next_chunk
@@ -665,7 +620,7 @@ class JoyOmniV2VStreamingSession:
             chunk_metas = self.pending_metas[:n]
             del self.pending_frames[:n]
             del self.pending_metas[:n]
-            self._submit_async_chunk(chunk_frames, chunk_metas, crop_box=crop_box)
+            self._submit_async_chunk(chunk_frames, chunk_metas)
         results = self._drain_async_results() if drain_results else []
         self._raise_worker_error_if_needed()
         return results
@@ -679,10 +634,9 @@ class JoyOmniV2VStreamingSession:
         pad = self.ffactor_t - valid
         chunk_frames = self.pending_frames + [self.pending_frames[-1]] * pad
         chunk_metas = self.pending_metas + [self.pending_metas[-1]] * pad
-        last_box = self.pending_metas[-1].get("crop_box") if self.pending_metas else None
         self.pending_frames = []
         self.pending_metas = []
-        self._submit_async_chunk(chunk_frames, chunk_metas, valid_count=valid, crop_box=last_box)
+        self._submit_async_chunk(chunk_frames, chunk_metas, valid_count=valid)
         self._raise_worker_error_if_needed()
 
     def close(self, timeout: float = 15.0) -> None:
@@ -700,8 +654,6 @@ class JoyOmniV2VStreamingSession:
         self.streaming_cond_embeds = None
         self.ref_image_latent = None
         self._pseudo_latent = None
-        if self.studio_compositor is not None:
-            self.studio_compositor.reset_temporal_state()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -1027,12 +979,12 @@ class JoyOmniV2VStreamingSession:
         frozen_anchor_id: int | None = None,
     ) -> torch.Tensor:
         noise_shape = (1, self.latent_channels, self.chunk_size, self.latent_h, self.latent_w)
-        current_chunk_latents = torch.randn(
+        current_chunk_latents = randn_tensor(
             noise_shape,
             generator=self.generator,
-            device="cpu",
+            device=self.device,
             dtype=self.target_dtype,
-        ).to(device=self.device)
+        )
 
         total_latent_frames = chunk_idx + 1
         chunk_window = self.pipeline._get_chunk_window(
@@ -1433,7 +1385,6 @@ class JoyOmniV2VStreamingSession:
         source_frames: list[Image.Image],
         source_metas: list[dict[str, Any]],
         valid_count: int | None = None,
-        crop_box: tuple[int, int, int, int] | None = None,
     ) -> None:
         self._raise_worker_error_if_needed()
         if self._encode_queue is None:
@@ -1442,7 +1393,6 @@ class JoyOmniV2VStreamingSession:
         chunk_idx = self.chunk_idx
 
         frozen_anchor_id = self._update_static_anchor(chunk_idx, source_frames)
-        box = crop_box or (source_metas[-1].get("crop_box") if source_metas else None)
         job = _ChunkJob(
             chunk_idx=chunk_idx,
             source_frames=source_frames,
@@ -1451,7 +1401,6 @@ class JoyOmniV2VStreamingSession:
             total_started=time.perf_counter(),
             frozen_anchor_id=frozen_anchor_id,
             valid_count=valid_count,
-            crop_box=box,
         )
         self._set_debug_state("submit", "put_encode", chunk_idx)
 
@@ -1663,7 +1612,6 @@ class JoyOmniV2VStreamingSession:
                         profile=decoded.job.profile,
                         chunk_idx=decoded.job.chunk_idx,
                         source_frames=decoded.job.source_frames,
-                        crop_box=decoded.job.crop_box,
                     )
 
                 n_out = len(packed)
@@ -1724,20 +1672,9 @@ class JoyOmniV2VStreamingSession:
             source_window = torch.cat([prev, new_frames], dim=2)
             if profile is not None:
                 self._timer_record(profile, "frames_to_tensor_s", started)
+        self.prev_source_frame = source_window[:, :, -1:].detach().clone()
         encode_device = _module_device(self.pipeline.vae)
         source_window = source_window.to(device=encode_device, dtype=self.target_dtype)
-
-        # White Studio input background isolation: streams only person + outfit on white, eliminating background GPU FLOPs
-        input_whiten = os.environ.get("JOYOMNI_STUDIO_INPUT_WHITEN", "1") == "1"
-        if self.studio_compositor is not None and getattr(self, "studio_white", False) and input_whiten:
-            try:
-                norm_src = (source_window.to(dtype=torch.float32) / 2.0 + 0.5).clamp(0.0, 1.0)
-                whited_src = self.studio_compositor.whiten_background(norm_src)
-                source_window = (whited_src * 2.0 - 1.0).to(dtype=self.target_dtype)
-            except Exception as _w_exc:
-                pass
-
-        self.prev_source_frame = source_window[:, :, -1:].detach().clone()
 
         _vc = _vae_compile_module()
         _vc.maybe_setup_encode(self.pipeline.vae)
@@ -1865,39 +1802,16 @@ class JoyOmniV2VStreamingSession:
         profile: dict[str, Any] | None = None,
         chunk_idx: int,
         source_frames: list[Image.Image] | None = None,
-        crop_box: tuple[int, int, int, int] | None = None,
     ) -> list[bytes]:
         post_device = self.postprocess_device
 
         chunk_decoded = decoded_pixels.to(device=post_device, dtype=torch.float32)
         norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
 
-        # White Studio Compositing (eliminates background GPU compute, outputs crisp pure white background)
-        if self.studio_compositor is not None:
-            try:
-                started_comp = time.perf_counter()
-                src_for_comp = None
-                if source_frames is not None and len(source_frames) > 0:
-                    try:
-                        src_tensor = self._frames_to_tensor(source_frames).to(device=post_device, dtype=torch.float32)
-                        src_for_comp = (src_tensor / 2.0 + 0.5).clamp(0.0, 1.0)
-                    except Exception:
-                        src_for_comp = None
-                norm_pixels = self.studio_compositor.composite_to_white_studio(
-                    norm_pixels,
-                    source_pixels=src_for_comp,
-                    crop_box=crop_box,
-                    full_canvas_size=(self.settings.width, self.settings.height),
-                )
-                if profile is not None:
-                    profile["studio_comp_s"] = time.perf_counter() - started_comp
-            except Exception as _comp_exc:
-                print(f"#####[STREAM] Notice in studio compositor: {_comp_exc!r}", flush=True)
-
         # High-Fidelity Background & Detail Preservation (Decart-grade photorealism)
         # Defaults to 0 so original t-shirt layout, collars, and bare arm cutoff lines are NOT blended over new garments
         preserve_bg = os.environ.get("JOYOMNI_PRESERVE_BACKGROUND", "0") == "1"
-        if preserve_bg and source_frames is not None and len(source_frames) > 0 and self.studio_compositor is None:
+        if preserve_bg and source_frames is not None and len(source_frames) > 0:
             try:
                 src_tensor = self._frames_to_tensor(source_frames).to(device=post_device, dtype=torch.float32)
                 if src_tensor.shape == chunk_decoded.shape:
@@ -1999,37 +1913,19 @@ class JoyOmniV2VStreamingSession:
         )
         return window["selected_chunk_ids"]
 
-    def _resize_canvas_frame(self, frame: Image.Image) -> Image.Image:
+    def _resize_frame(self, frame: Image.Image) -> Image.Image:
         frame = frame.convert("RGB")
         if frame.size == (self.settings.width, self.settings.height):
             return frame
         resampling = getattr(Image, "Resampling", Image).BICUBIC
         return frame.resize((self.settings.width, self.settings.height), resampling)
 
-    def _resize_frame(self, frame: Image.Image, target_size: tuple[int, int] | None = None) -> Image.Image:
-        target_wh = target_size or (self.dit_w, self.dit_h)
-        frame = frame.convert("RGB")
-        if frame.size == target_wh:
-            return frame
-        resampling = getattr(Image, "Resampling", Image).BICUBIC
-        return frame.resize(target_wh, resampling)
-
-    def _frames_to_tensor(
-        self,
-        frames: list[Image.Image],
-        target_size: tuple[int, int] | None = None,
-    ) -> torch.Tensor:
-        target_wh = target_size or (self.dit_w, self.dit_h)
-        arrays = [np.asarray(f if f.mode == "RGB" else f.convert("RGB"), dtype=np.uint8) for f in frames]
+    def _frames_to_tensor(self, frames: list[Image.Image]) -> torch.Tensor:
+        arrays = [np.asarray(self._resize_frame(frame), dtype=np.uint8) for frame in frames]
         u8 = torch.from_numpy(np.stack(arrays, axis=0))
         if torch.cuda.is_available():
             encode_device = _module_device(self.pipeline.vae)
             if encode_device.type == "cuda":
                 u8 = u8.to(encode_device, non_blocking=True)
         pixel = rearrange(u8, "t h w c -> 1 c t h w").to(torch.float32)
-        if pixel.shape[-1] != target_wh[0] or pixel.shape[-2] != target_wh[1]:
-            b, c, t, cur_h, cur_w = pixel.shape
-            flat = pixel.permute(0, 2, 1, 3, 4).reshape(b * t, c, cur_h, cur_w)
-            resized = F.interpolate(flat, size=(target_wh[1], target_wh[0]), mode="bilinear", align_corners=False)
-            pixel = resized.reshape(b, t, c, target_wh[1], target_wh[0]).permute(0, 2, 1, 3, 4)
         return pixel / 127.5 - 1.0
