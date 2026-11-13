@@ -1821,6 +1821,17 @@ class JoyOmniV2VStreamingSession:
         chunk_decoded = decoded_pixels.to(device=post_device, dtype=torch.float32)
         norm_pixels = (chunk_decoded / 2.0 + 0.5).clamp(0.0, 1.0)
 
+        # Garment Color Vibrance & Gamut Restoration:
+        # Counters VAE latent decode desaturation so vibrant garments (sports jerseys, bright silks) pop authentically.
+        vibrance_boost = float(os.environ.get("JOYOMNI_VIBRANCE", "1.18"))
+        if vibrance_boost > 1.0 and norm_pixels.ndim == 5:
+            lum = (
+                0.299 * norm_pixels[:, 0:1, :, :, :] +
+                0.587 * norm_pixels[:, 1:2, :, :, :] +
+                0.114 * norm_pixels[:, 2:3, :, :, :]
+            )
+            norm_pixels = torch.clamp(lum + vibrance_boost * (norm_pixels - lum), 0.0, 1.0)
+
         # Real-Face & Identity Preservation (100% optical camera focus on face, zero AI waxiness)
         # Keeps user's real face, eyes, glasses, facial hair, and hair at 100% camera sensor clarity,
         # with seamless Hermite feathering across the neck so the new try-on garment fits naturally.

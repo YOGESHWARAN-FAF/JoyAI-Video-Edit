@@ -2080,8 +2080,8 @@ async function beginSession() {
     const pTrim = (effectivePrompt || "").trim();
     if (!pTrim || pTrim.length < 35 || /^(wear\s*this|try\s*on|change\s*clothes)/i.test(pTrim)) {
       effectivePrompt = (currentLang === "en"
-        ? "Transform the subject's upper body shirt into the exact outfit from the reference image. This is a tailored short-sleeved collared shirt with crisp sleeves ending above the elbows. Render photorealistic cotton textile fabric with authentic thread weave, sharp tailored stitching along the collar, crisp round buttons with distinct rims and buttonholes on the tailored placket, and natural fabric creases with realistic lighting shadows. Cleanly erase and replace all existing t-shirt graphics, text, logos, colors, collar, and chest with the new garment. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and the background completely unchanged. Never generate long sleeves or fabric covering the arms."
-        : "将主角上半身的衣物完全替换为参考图中的服装。此服装为修身短袖衬衫，袖口位于肘部上方。彻底清除原有图案与文字。生成密实逼真的织物纹理、清晰领口缝线、门襟上精致清晰的纽扣与扣眼及自然褶皱。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成长袖或织物。");
+        ? "Transform the subject's upper body shirt into the exact garment shown in the reference image. Replicate the authentic colors, fabric weave, graphic prints, text, sponsor logos, collar styling, and seam construction from the reference image with photorealistic fidelity. Render natural fabric drape with 3D folds and creases following the subject's body pose. Cleanly replace all existing clothing graphics and colors with the new outfit. Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and background completely unchanged. Never generate long sleeves or fabric covering the arms."
+        : "将主角上半身的衣物完全替换为参考图中的服装。精准还原参考图中的颜色、面料质感、印花图案、文字标识、赞助商标志、领口造型及走线缝纫细节。生成随身体动态自然垂坠的立体衣褶与光影。彻底替换原有衣物图案与色彩。保持主角手臂、双手、面部五官、发型肤色及背景完全一致不变，严禁在手臂上生成长袖或织物。");
     }
   }
   const usePe = document.getElementById("usePe").checked;
