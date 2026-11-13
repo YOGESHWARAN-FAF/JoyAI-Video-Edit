@@ -76,9 +76,9 @@ def _profile_timer_elapsed(started: _ProfileTimer | float) -> float:
 
 @dataclass(frozen=True)
 class StreamingSettings:
-    height: int = 720
-    width: int = 1248
-    num_inference_steps: int = 2
+    height: int = 1080
+    width: int = 600
+    num_inference_steps: int = 1
     seed: int = 42
     max_sequence_length: int | None = None
     enable_denormalization: bool | None = None
@@ -240,8 +240,8 @@ class JoyOmniRuntime:
         vae_pseudo_device: str | torch.device | None = None,
         postprocess_device: str | torch.device | None = None,
         seed: int = 42,
-        warmup_height: int = 720,
-        warmup_width: int = 1248,
+        warmup_height: int = 1080,
+        warmup_width: int = 600,
     ) -> "JoyOmniRuntime":
         device_obj = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         encode_device_arg = vae_encode_device if vae_encode_device is not None else vae_device
@@ -305,8 +305,9 @@ class JoyOmniRuntime:
         pipeline.transformer.eval()
 
         _orientations = [(warmup_height, warmup_width)]
-        if (warmup_width, warmup_height) != (warmup_height, warmup_width):
-            _orientations.append((warmup_width, warmup_height))
+        if os.environ.get("JOYOMNI_WARMUP_BOTH_ORIENTATIONS", "0") == "1":
+            if (warmup_width, warmup_height) != (warmup_height, warmup_width):
+                _orientations.append((warmup_width, warmup_height))
         _stem_mod = pipeline.vae.stem
 
         try:
@@ -408,8 +409,8 @@ class JoyOmniRuntime:
     def warmup_full_pipeline(
         self,
         *,
-        height: int = 720,
-        width: int = 1248,
+        height: int = 1080,
+        width: int = 600,
         num_chunks: int = _FULL_WARMUP_CHUNKS,
     ) -> None:
         t0 = time.time()
@@ -1915,10 +1916,32 @@ class JoyOmniV2VStreamingSession:
 
     def _resize_frame(self, frame: Image.Image) -> Image.Image:
         frame = frame.convert("RGB")
-        if frame.size == (self.settings.width, self.settings.height):
+        target_w, target_h = self.settings.width, self.settings.height
+        if frame.size == (target_w, target_h):
             return frame
+
+        src_w, src_h = frame.size
+        src_ar = src_w / src_h
+        target_ar = target_w / target_h
+
+        # Optical center-crop if aspect ratios differ (e.g. 16:9 input to 9:16 portrait)
+        if abs(src_ar - target_ar) > 0.01:
+            if src_ar > target_ar:
+                # Source is wider than target: trim left and right sides
+                crop_w = int(round(src_h * target_ar))
+                crop_h = src_h
+                sx = (src_w - crop_w) // 2
+                sy = 0
+            else:
+                # Source is taller than target: trim top and bottom
+                crop_w = src_w
+                crop_h = int(round(src_w / target_ar))
+                sx = 0
+                sy = (src_h - crop_h) // 2
+            frame = frame.crop((sx, sy, sx + crop_w, sy + crop_h))
+
         resampling = getattr(Image, "Resampling", Image).BICUBIC
-        return frame.resize((self.settings.width, self.settings.height), resampling)
+        return frame.resize((target_w, target_h), resampling)
 
     def _frames_to_tensor(self, frames: list[Image.Image]) -> torch.Tensor:
         arrays = [np.asarray(self._resize_frame(frame), dtype=np.uint8) for frame in frames]

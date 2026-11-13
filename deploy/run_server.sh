@@ -101,6 +101,9 @@ export JOYOMNI_SHARPNESS="${JOYOMNI_SHARPNESS:-0.42}"
 export JOYOMNI_OUTPUT_QUALITY="${JOYOMNI_OUTPUT_QUALITY:-95}"
 export JOYOMNI_PRESERVE_BACKGROUND="${JOYOMNI_PRESERVE_BACKGROUND:-0}"
 export JOYOMNI_REF_BASESIZE="${JOYOMNI_REF_BASESIZE:-768}"
+export JOYOMNI_WIDTH="${JOYOMNI_WIDTH:-600}"
+export JOYOMNI_HEIGHT="${JOYOMNI_HEIGHT:-1080}"
+export JOYOMNI_FPS="${JOYOMNI_FPS:-24}"
 
 # Local Qwen PE; select api for an external PE endpoint.
 export JOYOMNI_PE_BACKEND="${JOYOMNI_PE_BACKEND:-none}"
@@ -134,8 +137,8 @@ PORT="${JOYOMNI_PORT:-8080}"
   --vae-decode-device "$DEVICE" \
   --vae-pseudo-device "$DEVICE" \
   --postprocess-device "$DEVICE" \
-  --width "${JOYOMNI_WIDTH:-840}" --height "${JOYOMNI_HEIGHT:-480}" \
-  --fps "${JOYOMNI_FPS:-20}" \
+  --width "${JOYOMNI_WIDTH:-600}" --height "${JOYOMNI_HEIGHT:-1080}" \
+  --fps "${JOYOMNI_FPS:-24}" \
   --output-quality "${JOYOMNI_OUTPUT_QUALITY:-95}" \
   --trial-duration-s "${JOYOMNI_TRIAL_DURATION_S:-15}" \
   --pe-timeout-s "${JOYOMNI_PE_TIMEOUT_S:-60}" \
