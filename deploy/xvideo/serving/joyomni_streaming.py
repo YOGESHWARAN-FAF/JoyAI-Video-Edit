@@ -575,7 +575,7 @@ class JoyOmniV2VStreamingSession:
         if self.ref_image is None:
             return
 
-        enable_stage2 = os.environ.get("JOYOMNI_STAGE2_ENHANCE", "1") == "1"
+        enable_stage2 = os.environ.get("JOYOMNI_STAGE2_ENHANCE", "0") == "1"
         if not enable_stage2:
             return
 
@@ -1980,7 +1980,7 @@ class JoyOmniV2VStreamingSession:
         # Stage 2B: Seamless Typographic & Graphic Stroke Injection (Decart AI Oasis-style)
         # Restores 100% vector-sharp logos & text without rectangular patch boundaries or ghost stickers.
         # Modulated by DiT dynamic lighting & folds, with skin occlusion protection for crossed arms.
-        enable_stage2 = os.environ.get("JOYOMNI_STAGE2_ENHANCE", "1") == "1"
+        enable_stage2 = os.environ.get("JOYOMNI_STAGE2_ENHANCE", "0") == "1"
         if (
             enable_stage2
             and self._has_graphic_strokes
@@ -2117,7 +2117,7 @@ class JoyOmniV2VStreamingSession:
         # Tier 1 (Gaussian 3x3): Micro-grain cotton thread weave and tactile textile texture
         # Tier 2 (Gaussian 7x7): Natural fabric creases, lapels, and 3D lighting shadows
         # Tier 3 (8-neighbor Laplacian): Razor-sharp button rims, buttonholes, collar seams, and placket stitches
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.22"))
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.28"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
@@ -2145,7 +2145,7 @@ class JoyOmniV2VStreamingSession:
 
             # Balanced weighting to eliminate liquid floating/swimming artifacts while maintaining crisp drape
             sharpened = torch.clamp(
-                reshaped + sharpness_alpha * (0.35 * fine_weave + 0.45 * struct_folds + 0.20 * lap_edges),
+                reshaped + sharpness_alpha * (0.30 * fine_weave + 0.35 * struct_folds + 0.35 * lap_edges),
                 0.0, 1.0,
             )
             frames_u8 = (

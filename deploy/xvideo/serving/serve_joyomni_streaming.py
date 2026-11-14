@@ -2500,7 +2500,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--static-diff-thresh", type=float,
                         default=float(os.environ.get("JOYOMNI_STATIC_DIFF_THRESH", "0.65")))
     parser.add_argument("--stage2-enhance", action=argparse.BooleanOptionalAction,
-                        default=os.environ.get("JOYOMNI_STAGE2_ENHANCE", "1") == "1",
+                        default=os.environ.get("JOYOMNI_STAGE2_ENHANCE", "0") == "1",
                         help="Enable Decart AI-style Stage 2 Typographic & Graphic Stroke Enhancement.")
     parser.add_argument("--temporal-lock", action=argparse.BooleanOptionalAction,
                         default=os.environ.get("JOYOMNI_TEMPORAL_LOCK", "1") == "1",
