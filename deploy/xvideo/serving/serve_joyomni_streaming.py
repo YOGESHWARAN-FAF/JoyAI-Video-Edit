@@ -870,6 +870,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
             "detection_mode": default_detection,
             "static_diff_thresh": args.static_diff_thresh,
             "freeze_kv_on_static": args.freeze_kv_on_static,
+            "stage2_enhance": args.stage2_enhance,
+            "temporal_lock": args.temporal_lock,
+            "stroke_strength": args.stroke_strength,
             "profile_timings": args.profile_timings,
             "use_pe": args.use_pe and pe_available(args.pe_backend),
             "pe_available": pe_available(args.pe_backend),
@@ -924,6 +927,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                 "max_temporal_ids": args.max_temporal_ids,
                 "freeze_kv_on_static": args.freeze_kv_on_static,
                 "static_diff_thresh": args.static_diff_thresh,
+                "stage2_enhance": args.stage2_enhance,
+                "temporal_lock": args.temporal_lock,
+                "stroke_strength": args.stroke_strength,
             }
         )
 
@@ -1768,6 +1774,18 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         static_diff_thresh = float(
                             payload.get("static_diff_thresh", args.static_diff_thresh)
                         )
+                        stage2_enhance = bool(
+                            payload.get("stage2_enhance", args.stage2_enhance)
+                        )
+                        temporal_lock = bool(
+                            payload.get("temporal_lock", args.temporal_lock)
+                        )
+                        stroke_strength = float(
+                            payload.get("stroke_strength", args.stroke_strength)
+                        )
+                        os.environ["JOYOMNI_STAGE2_ENHANCE"] = "1" if stage2_enhance else "0"
+                        os.environ["JOYOMNI_TEMPORAL_LOCK"] = "1" if temporal_lock else "0"
+                        os.environ["JOYOMNI_STROKE_STRENGTH"] = str(stroke_strength)
                         session_max_inflight = max(0, int(
                             payload.get("max_inflight_chunks", args.max_inflight_chunks) or 0
                         ))
@@ -2481,6 +2499,15 @@ def build_parser() -> argparse.ArgumentParser:
                         default=os.environ.get("JOYOMNI_FREEZE_KV_ON_STATIC", "1") == "1")
     parser.add_argument("--static-diff-thresh", type=float,
                         default=float(os.environ.get("JOYOMNI_STATIC_DIFF_THRESH", "0.65")))
+    parser.add_argument("--stage2-enhance", action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("JOYOMNI_STAGE2_ENHANCE", "1") == "1",
+                        help="Enable Decart AI-style Stage 2 Typographic & Graphic Stroke Enhancement.")
+    parser.add_argument("--temporal-lock", action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("JOYOMNI_TEMPORAL_LOCK", "1") == "1",
+                        help="Enable GPU Motion-Adaptive Temporal Lock to eliminate liquid floating texture boiling.")
+    parser.add_argument("--stroke-strength", type=float,
+                        default=float(os.environ.get("JOYOMNI_STROKE_STRENGTH", "0.92")),
+                        help="Stage 2 typographic stroke transfer strength (0.0 - 1.0).")
     parser.add_argument("--preload", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--session-init-timeout-s", type=float, default=120.0, help="Timeout for session initialization, with or without a reference image.")
     parser.add_argument("--push-frame-timeout-s", type=float, default=15.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")
