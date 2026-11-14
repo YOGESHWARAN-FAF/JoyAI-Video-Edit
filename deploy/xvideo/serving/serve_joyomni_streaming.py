@@ -1718,8 +1718,10 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                             clean_raw = raw_session_prompt.strip()
                             lower_p = clean_raw.lower()
                             is_saree = any(w in lower_p for w in ("saree", "sari", "lehenga", "anarkali", "dupatta", "salwar", "kurti"))
-                            is_tshirt = any(w in lower_p for w in ("t-shirt", "tshirt", "tee", "crew neck", "round neck", "jersey", "tank"))
-                            is_collared = any(w in lower_p for w in ("collared", "button", "suit", "placket", "formal shirt", "polo", "oxford"))
+                            is_jersey = any(w in lower_p for w in ("jersey", "csk", "chennai super kings", "ipl", "cricket", "sports", "athletic", "etihad", "gulf"))
+                            is_overshirt = any(w in lower_p for w in ("overshirt", "jacket", "open shirt", "outer", "flap pocket", "twinset"))
+                            is_tshirt = any(w in lower_p for w in ("t-shirt", "tshirt", "tee", "crew neck", "round neck", "tank")) and not is_jersey
+                            is_collared = any(w in lower_p for w in ("collared", "button", "suit", "placket", "formal shirt", "polo", "oxford")) and not (is_jersey or is_overshirt)
 
                             if is_saree:
                                 garment_spec = (
@@ -1727,6 +1729,21 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                                     "Gracefully drape the rich red silk fabric with opulent golden zari brocade borders and floral motifs across the torso, with the pleated pallu draped over the shoulder. "
                                     "Render authentic raw silk texture with natural shimmering golden luster, intricate zari embroidery, and fluid fabric folds following body movement. "
                                     "Do not generate buttons, plackets, collar flaps, or western shirt seams. "
+                                )
+                            elif is_jersey:
+                                garment_spec = (
+                                    "This is a high-performance athletic cricket polo jersey in vibrant canary yellow. "
+                                    "Features a sporty open V-neck polo collar, camouflage shoulder panels, and navy blue flank ventilation panels. "
+                                    "Crisp sponsor graphics across the chest: circular blue Gulf badge, roaring lion crest, and bold navy-blue ETIHAD AIRWAYS typography across the center chest. "
+                                    "Render realistic breathable polyester micro-mesh texture with natural fabric drape following body movement. "
+                                    "Do not generate business suit lapels, white formal buttons, or long sleeves. "
+                                )
+                            elif is_overshirt:
+                                garment_spec = (
+                                    "This is a modern layered casual menswear outfit: an unbuttoned peach cotton twill overshirt worn open over a clean white crewneck t-shirt. "
+                                    "Structured spread collar, open front placket with round black contrast buttons, two symmetrical flap patch chest pockets, and sleeves neatly cuffed below the elbows. "
+                                    "Authentic cotton twill fabric weave and natural drape folds. "
+                                    "Do not close the shirt; keep the white undershirt clearly visible down the center chest. "
                                 )
                             elif is_tshirt:
                                 garment_spec = (
