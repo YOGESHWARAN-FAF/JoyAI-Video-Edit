@@ -1716,64 +1716,22 @@ def create_app(args: argparse.Namespace) -> FastAPI:
                         if ref_image is not None:
                             ref_image = _sanitize_reference_garment_image(ref_image, onnx_path=args.face_detector_onnx)
                             clean_raw = raw_session_prompt.strip()
-                            lower_p = clean_raw.lower()
-                            is_saree = any(w in lower_p for w in ("saree", "sari", "lehenga", "anarkali", "dupatta", "salwar", "kurti"))
-                            is_jersey = any(w in lower_p for w in ("jersey", "csk", "chennai super kings", "ipl", "cricket", "sports", "athletic", "etihad", "gulf"))
-                            is_overshirt = any(w in lower_p for w in ("overshirt", "jacket", "open shirt", "outer", "flap pocket", "twinset"))
-                            is_tshirt = any(w in lower_p for w in ("t-shirt", "tshirt", "tee", "crew neck", "round neck", "tank")) and not is_jersey
-                            is_collared = any(w in lower_p for w in ("collared", "button", "suit", "placket", "formal shirt", "polo", "oxford")) and not (is_jersey or is_overshirt)
 
-                            if is_saree:
-                                garment_spec = (
-                                    "This is an elegant traditional Indian silk saree outfit with a matching tailored short-sleeved blouse. "
-                                    "Gracefully drape the rich red silk fabric with opulent golden zari brocade borders and floral motifs across the torso, with the pleated pallu draped over the shoulder. "
-                                    "Render authentic raw silk texture with natural shimmering golden luster, intricate zari embroidery, and fluid fabric folds following body movement. "
-                                    "Do not generate buttons, plackets, collar flaps, or western shirt seams. "
-                                )
-                            elif is_jersey:
-                                garment_spec = (
-                                    "This is a high-performance athletic cricket polo jersey in vibrant canary yellow. "
-                                    "Features a sporty open V-neck polo collar, camouflage shoulder panels, and navy blue flank ventilation panels. "
-                                    "Crisp sponsor graphics across the chest: circular blue Gulf badge, roaring lion crest, and bold navy-blue ETIHAD AIRWAYS typography across the center chest. "
-                                    "Render realistic breathable polyester micro-mesh texture with natural fabric drape following body movement. "
-                                    "Do not generate business suit lapels, white formal buttons, or long sleeves. "
-                                )
-                            elif is_overshirt:
-                                garment_spec = (
-                                    "This is a modern layered casual menswear outfit: an unbuttoned peach cotton twill overshirt worn open over a clean white crewneck t-shirt. "
-                                    "Structured spread collar, open front placket with round black contrast buttons, two symmetrical flap patch chest pockets, and sleeves neatly cuffed below the elbows. "
-                                    "Authentic cotton twill fabric weave and natural drape folds. "
-                                    "Do not close the shirt; keep the white undershirt clearly visible down the center chest. "
-                                )
-                            elif is_tshirt:
-                                garment_spec = (
-                                    "This is a casual short-sleeved round-neck T-shirt (crew-neck tee) with a circular ribbed collar and clean seamless chest. "
-                                    "Do not generate buttons, plackets, collar flaps, or formal shirt seams. "
-                                )
-                            elif is_collared:
-                                garment_spec = (
-                                    "This is a tailored collared shirt with crisp collar flaps, tailored placket, and buttons. "
-                                )
-                            else:
-                                garment_spec = (
-                                    "Faithfully replicate the exact garment styling, neckline, and collar from the reference image. "
-                                    "If the reference garment is a saree, drape the silk saree with pallu and matching blouse. "
-                                    "If the reference garment is a T-shirt or crewneck tee, render a smooth round-neck collar without buttons or plackets. "
-                                    "If the reference garment has collar flaps or buttons, render them sharply. "
-                                )
-
-                            protect_clause = (
-                                f"Transform the subject's upper body clothing into the exact garment shown in the reference image. "
-                                f"{garment_spec}"
-                                "Replicate authentic fabric texture, colors, graphic prints, text, logos, and seam construction from the reference image with photorealistic fidelity. "
-                                "Cleanly erase and replace all existing clothing graphics, colors, collars, and chest with the new garment. "
-                                "Keep the subject's bare arms, forearms, hands, face, eyes, facial identity, hair, skin tone, and background completely unchanged. "
-                                "Never generate long sleeves or fabric covering the arms unless the reference garment has long sleeves."
+                            # Universal accurate try-on prompt: transfers ANY garment directly from the reference image
+                            # with faithful cut, neckline, collar, and respected anatomical fitting, without hardcoded biases.
+                            universal_tryon_spec = (
+                                "A photorealistic virtual try-on video of the subject wearing the exact garment shown in the reference image. "
+                                "Faithfully replicate the garment's precise cut, silhouette, collar, neckline, sleeve length, fabric texture, colors, and graphic patterns directly from the reference image. "
+                                "Tailor and fit the garment naturally and cleanly over the subject's neck, shoulders, and chest, with authentic 3D fabric drape, natural creasing, and dynamic folds that follow body movement. "
+                                "Completely erase and replace the subject's existing clothing with the new garment. "
+                                "Keep the subject's face, facial features, facial identity, hair, skin tone, neck, bare arms, and background completely natural and unchanged. "
+                                "Never generate long sleeves or fabric covering the arms unless the reference garment itself has long sleeves."
                             )
-                            if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on"):
-                                session_prompt = protect_clause
+
+                            if not clean_raw or clean_raw == args.prompt or clean_raw.lower() in ("wear this", "try on", "change clothes", "wear", "put this on", "default"):
+                                session_prompt = universal_tryon_spec
                             else:
-                                session_prompt = f"{clean_raw.rstrip('. ')}. {protect_clause}"
+                                session_prompt = f"{clean_raw.rstrip('. ')}. {universal_tryon_spec}"
                         elif any(w in session_prompt.lower() for w in ("wear", "cloth", "dress", "jacket", "suit", "shirt", "pant", "hoodie", "coat", "outfit", "tshirt")):
                             if "face" not in session_prompt.lower():
                                 session_prompt = (
@@ -2520,8 +2478,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kv-reset-frames", type=int, default=600)
     parser.add_argument("--max-temporal-ids", type=int, default=8)
     parser.add_argument("--freeze-kv-on-static", action=argparse.BooleanOptionalAction,
-                        default=os.environ.get("JOYOMNI_FREEZE_KV_ON_STATIC", "0") == "1")
-    parser.add_argument("--static-diff-thresh", type=float, default=0.5)
+                        default=os.environ.get("JOYOMNI_FREEZE_KV_ON_STATIC", "1") == "1")
+    parser.add_argument("--static-diff-thresh", type=float,
+                        default=float(os.environ.get("JOYOMNI_STATIC_DIFF_THRESH", "0.65")))
     parser.add_argument("--preload", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--session-init-timeout-s", type=float, default=120.0, help="Timeout for session initialization, with or without a reference image.")
     parser.add_argument("--push-frame-timeout-s", type=float, default=15.0, help="Timeout for frame submission or file-input backpressure; teardown must finish before model reuse.")

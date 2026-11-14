@@ -83,8 +83,8 @@ class StreamingSettings:
     max_sequence_length: int | None = None
     enable_denormalization: bool | None = None
     max_temporal_ids: int | None = None
-    freeze_kv_on_static: bool = False
-    static_diff_thresh: float = 0.5
+    freeze_kv_on_static: bool = True
+    static_diff_thresh: float = 0.65
     store_clean_self_only: bool = True
     profile_timings: bool = False
     output_codec: str = "mjpeg"
@@ -1917,7 +1917,7 @@ class JoyOmniV2VStreamingSession:
         # Tier 1 (Gaussian 3x3): Micro-grain cotton thread weave and tactile textile texture
         # Tier 2 (Gaussian 7x7): Natural fabric creases, lapels, and 3D lighting shadows
         # Tier 3 (8-neighbor Laplacian): Razor-sharp button rims, buttonholes, collar seams, and placket stitches
-        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.40"))
+        sharpness_alpha = float(os.environ.get("JOYOMNI_SHARPNESS", "0.22"))
         if sharpness_alpha > 0.0 and norm_pixels.ndim == 5:
             import torch.nn.functional as F
             b, c, t, h, w = norm_pixels.shape
@@ -1943,8 +1943,9 @@ class JoyOmniV2VStreamingSession:
             ).view(1, 1, 3, 3).repeat(c, 1, 1, 1) / 8.0
             lap_edges = F.conv2d(reshaped, klap, padding=1, groups=c)
 
+            # Balanced weighting to eliminate liquid floating/swimming artifacts while maintaining crisp drape
             sharpened = torch.clamp(
-                reshaped + sharpness_alpha * (0.50 * fine_weave + 0.35 * struct_folds + 0.35 * lap_edges),
+                reshaped + sharpness_alpha * (0.35 * fine_weave + 0.45 * struct_folds + 0.20 * lap_edges),
                 0.0, 1.0,
             )
             frames_u8 = (
